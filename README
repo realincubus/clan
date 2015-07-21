@@ -53,3 +53,39 @@ $> make
 $> make test
 $> # make install # sudo make install # su -c "make install"
 $> make doc
+
+Project Status
+--------------
+
+This project aims to use clan together with clang.
+This will make it possible to parse C++ code and make it easier
+to extend clan. 
+In particular i am using YouCompleteMe to generate an clang AST from the C++ Code 
+i am editing. This AST is analyzed by clan-clang and definitions scop are generated.
+The definitions are exchanged via osl and read by pluto.
+
+The aim is to be able to make the best use of the information the compiler has at compile time 
+and to generate error messages that tell the user why something can't be a scop.
+This way the user might be able to fix the problem so that the optimization can work.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
