@@ -69,10 +69,13 @@ and to generate error messages that tell the user why something can't be a scop.
 This way the user might be able to fix the problem so that the optimization can work.
 
 
+2015-07-21 16:42 a simple example that contains one loop and an if statement works
 
+Tasks
+_____
 
-
-
+- make a clan program replacement called clan-clang that has the same arguments as clan
+  - run all the test cases that exist for clan with clan-clang 
 
 
 
