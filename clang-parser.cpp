@@ -1186,13 +1186,13 @@ osl_relation_p handleAffineMinMaxExpression( const Expr* expr ){
 
 }
 
-// TODO add the functionality to also allow assign statements
 auto handleLoopDeclaration( const Stmt* stmt ) {
   if ( auto decl_stmt = dyn_cast_or_null<DeclStmt>( stmt ) ){
     return decl_stmt;
   }
 }
 
+// TODO add the functionality to also allow assign statements
 osl_relation_p handleLoopInitialization( const Stmt* stmt ){
 
   if( auto loop_declaration = handleLoopDeclaration( stmt ) ){
@@ -1656,11 +1656,11 @@ auto handleLoopStride( const Expr* expr ){
     auto decl_ref = dyn_cast_or_null<DeclRefExpr>(unary_operator->getSubExpr());
     if ( decl_ref ) {
       string opcode = unary_operator->getOpcodeStr(unary_operator->getOpcode());
-      if ( opcode == "--" ) {
+      if ( opcode == "++" ) {
 	parser_xfor_index++; 
 	return  1;  
       }
-      if ( opcode == "++" ) {
+      if ( opcode == "--" ) {
 	parser_xfor_index++; 
 	return -1;  
       }
@@ -1700,35 +1700,15 @@ auto handleLoopStride( const Expr* expr ){
 
 }
 
+// TODO handle multiple strides
 auto handleLoopStrideList(const Expr* expr){
 
   auto loop_stride = handleLoopStride( expr );
   if ( loop_stride ) {
-      auto ret = (int*)malloc(sizeof(int));
-      ret[0] = loop_stride;
-      return ret;
+    auto ret = (int*)malloc(sizeof(int));
+    ret[0] = loop_stride;
+    return ret;
   }
-
-#if 0
-  int* ret = (int*) malloc( sizeof(int) );
-  const auto* is_dec_unary = Result.Nodes.getNodeAs<UnaryOperator>(DECREMENT_ONE_ID);
-  const auto* is_dec_binary = Result.Nodes.getNodeAs<BinaryOperator>(DECREMENT_ONE_ID);
-
-  if ( is_dec_unary || is_dec_binary ) {
-    ret[0] = -1;
-    cout << "loop stride is --" << endl;
-  }
-
-  const auto* is_inc_unary = Result.Nodes.getNodeAs<UnaryOperator>(DECREMENT_ONE_ID);
-  const auto* is_inc_binary = Result.Nodes.getNodeAs<BinaryOperator>(DECREMENT_ONE_ID);
-
-  if ( is_inc_unary || is_inc_binary ) {
-    ret[0] = 1;
-    cout << "loop stride is ++" << endl;
-  }
-  cout << "leaving " <<__PRETTY_FUNCTION__ << endl;
-  return ret;
-#endif
 }
 
 auto handleIfStatement( const Stmt* stmt ){
@@ -1817,6 +1797,8 @@ auto handleIterationStatement( const Stmt* stmt ){
     auto loop_initialization_list = handleLoopInitializationList( FOR->getInit() );
     auto loop_condition_list = handleLoopConditionList( FOR->getCond() );
     auto loop_stride_list = handleLoopStrideList( FOR->getInc() );
+
+    cerr << "loop stride is " << loop_stride_list[0] << endl;
 
     if ( loop_initialization_list && loop_condition_list && loop_stride_list ) {
       CLAN_debug("rule iteration_statement.2.1: for ( init cond stride ) ...");
@@ -2477,6 +2459,16 @@ osl_relation_list_p handleExpression( const Expr* expr ){
 
 auto handleExpressionStatement( const Stmt* stmt ){
   cerr << __PRETTY_FUNCTION__ << endl;
+
+  if (parser_options->extbody) {
+    parser_access_start = -1;
+    parser_access_extbody = osl_extbody_malloc();
+  }
+
+  auto statement_str = getString( stmt );
+  statement_str += ";";
+  CLAN_strdup(parser_record, statement_str.c_str());
+  parser_recording = CLAN_TRUE;
 
   auto expression = handleExpression( dyn_cast_or_null<Expr>(stmt) );
   if ( expression ) {

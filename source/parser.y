@@ -70,6 +70,9 @@
    #include <clan/statement.h>
    #include <clan/options.h>
 
+  #undef CLAN_DEBUG
+   #define CLAN_DEBUG 1
+
    int  yylex(void);
    void yyerror(char*);
    void yyrestart(FILE*);
@@ -227,6 +230,8 @@
 %destructor { osl_relation_list_free($$); } <list>
 %destructor { osl_statement_free($$); } <stmt>
 
+
+
 %start scop_list
 %%
 
@@ -248,6 +253,7 @@ scop_list:
 scop:
     statement_list IGNORE
     {
+      printf("found a scop\n");
       int nb_parameters;
       osl_scop_p scop;
       osl_generic_p arrays;
@@ -317,6 +323,7 @@ statement_indented:
     }
     statement
     {
+      printf("found a statement at %d %d\n", scanner_line, scanner_column);
       $$ = $2;
     }
   ; 
@@ -344,6 +351,7 @@ statement:
     }    
     iteration_statement
     {
+      printf("found a for statement action at %d %d\n", scanner_line, scanner_column);
       $$ = $2;
       if (parser_options->autoscop && parser_autoscop && !parser_loop_depth) {
         parser_line_end = scanner_line;
@@ -524,6 +532,7 @@ iteration_statement:
   |
     FOR '(' loop_initialization_list loop_condition_list loop_stride_list ')'
     {
+      printf("found a for loop header at %d %d\n", scanner_line, scanner_column);
       CLAN_debug("rule iteration_statement.2.1: for ( init cond stride ) ...");
       parser_xfor_labels[parser_loop_depth] = 0;
       clan_parser_increment_loop_depth();
@@ -603,15 +612,16 @@ iteration_statement:
 loop_initialization_list:
     loop_initialization ',' loop_initialization_list
     {
-      osl_relation_list_p new = osl_relation_list_malloc();
+      osl_relation_list_p new_rel = osl_relation_list_malloc();
       CLAN_debug("rule initialization_list.1: initialization , "
 	         "initialization_list");
-      new->elt = $1;
-      osl_relation_list_push(&$3, new);
+      new_rel->elt = $1;
+      osl_relation_list_push(&$3, new_rel);
       $$ = $3;
     }
   | loop_initialization ';'
     {
+      printf("found a loop_initialization at %d %d\n", scanner_line, scanner_column);
       CLAN_debug("rule initialization_list.2: initialization ;");
       parser_xfor_index = 0;
       $$ = osl_relation_list_malloc();
@@ -647,9 +657,9 @@ loop_declaration:
 loop_condition_list:
     loop_condition ',' loop_condition_list
     {
-      osl_relation_list_p new = osl_relation_list_malloc();
-      new->elt = $1;
-      osl_relation_list_push(&$3, new);
+      osl_relation_list_p new_rel = osl_relation_list_malloc();
+      new_rel->elt = $1;
+      osl_relation_list_push(&$3, new_rel);
       $$ = $3;
     }
   | loop_condition ';'
@@ -724,6 +734,7 @@ loop_infinite:
 loop_body:
     statement
     {
+      printf("found a loop body at %d %d\n", scanner_line, scanner_column);
       CLAN_debug("rule loop_body.1: <stmt>");
       parser_loop_depth--;
       clan_symbol_free(parser_iterators[parser_loop_depth]);
@@ -989,6 +1000,7 @@ affine_primary_expression:
       clan_symbol_p id;
 
       CLAN_debug("rule affine_primary_expression.1: id");
+      printf("yyvsp[0].symbol %s\n", yyvsp[0].symbol );
       id = clan_symbol_add(&parser_symbol, $1, CLAN_UNDEFINED);
       // An id in an affex can be either an iterator or a parameter. If it is
       // an unknown (embeds read-only variables), it is updated to a parameter.

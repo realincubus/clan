@@ -5,7 +5,7 @@ set(PACKAGE_VERSION "0.7.1")
 set(top_srcdir "${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
-
+SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
 
 # User's settings - C Flags
 
@@ -14,10 +14,12 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 	# Release
 	if (release)
-		set(CMAKE_C_FLAGS "-O3")
+	  set(CMAKE_C_FLAGS "-O3 -fPIC")
+	  set(CMAKE_CXX_FLAGS "-O3 -std=c++14 -fno-rtti")
 	# Debug # valgrind --show-reachable=yes --leak-check=full -v exe
 	else()
-		set(CMAKE_C_FLAGS "-O0 -g3")
+	  set(CMAKE_C_FLAGS "-O0 -g3 -fPIC")
+	  set(CMAKE_CXX_FLAGS "-O0 -std=c++14 -fPIC -fno-rtti")
 	endif()
 
 # User's settings - General C Flags
@@ -87,6 +89,8 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 	# clan
 	include_directories("./include")
 
+	add_subdirectory( backward-cpp)
+
 
 # Compiler log
 	message(STATUS "---")
@@ -101,7 +105,42 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 # Library
 
+	function ( add_libraries libname sources bison_files )
 	message(STATUS "---")
+
+
+	# Shared
+	add_library(
+		${libname}
+		SHARED
+		${sources}
+		${bison_files}
+		${FLEX_clan_scanner_OUTPUTS}
+		${backward_ENABLE}
+	)
+
+        add_backward( ${libname} )
+	target_link_libraries(${libname} ${OSL_LIBRARY})
+	get_property(clan_lib_location TARGET ${libname} PROPERTY LOCATION)
+	message(STATUS "Add ${libname} library (shared) ${clan_lib_location}")
+
+	# Static
+	add_library(
+		${libname}_static
+		STATIC
+		${sources}
+		${bison_files}
+		${FLEX_clan_scanner_OUTPUTS}
+		${backward_ENABLE}
+	)
+
+        add_backward( ${libname}_static )
+	set_target_properties(${libname}_static PROPERTIES OUTPUT_NAME ${libname})
+	target_link_libraries(${libname}_static ${OSL_LIBRARY})
+	get_property(clan_static_lib_location TARGET ${libname}_static PROPERTY LOCATION)
+	message(STATUS "Add ${libname} library (static) ${clan_static_lib_location}")
+	endfunction( add_libraries )
+
 
 	# files .c
 	file(
@@ -109,41 +148,39 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 		sources
 		source/*
 	)
+
 	string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/source/clan.c;" "" sources "${sources}") # with ;
 	string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/source/clan.c" "" sources "${sources}")  # without ;
 
-	# Shared
-	add_library(
-		clan
-		SHARED
-		${sources}
-		${BISON_clan_parser_OUTPUTS}
-		${FLEX_clan_scanner_OUTPUTS}
-	)
-	target_link_libraries(clan ${OSL_LIBRARY})
-	get_property(clan_lib_location TARGET clan PROPERTY LOCATION)
-	message(STATUS "Add clan library (shared) ${clan_lib_location}")
+	add_libraries( clan "${sources}" "${BISON_clan_parser_OUTPUTS}" )
 
-	# Static
-	add_library(
-		clan_static
-		STATIC
-		${sources}
-		${BISON_clan_parser_OUTPUTS}
-		${FLEX_clan_scanner_OUTPUTS}
-	)
-	set_target_properties(clan_static PROPERTIES OUTPUT_NAME clan)
-	target_link_libraries(clan_static ${OSL_LIBRARY})
-	get_property(clan_static_lib_location TARGET clan_static PROPERTY LOCATION)
-	message(STATUS "Add clan library (static) ${clan_static_lib_location}")
+	find_package(LLVM REQUIRED CONFIG)
 
+	message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+	message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+
+	# Set your project compile flags.
+	# E.g. if using the C++ header files
+	# you will need to enable C++11 support
+	# for your compiler.
+
+	include_directories(${LLVM_INCLUDE_DIRS})
+	add_definitions(${LLVM_DEFINITIONS})
+
+	# Find the libraries that correspond to the LLVM components
+	# that we wish to use
+	llvm_map_components_to_libnames(llvm_libs support core irreader)
+
+	add_libraries( clan-clang "${sources}" "clang-parser.cpp" )
+
+	target_link_libraries(clan-clang clangASTMatchers clangDynamicASTMatchers )
 
 # Executables & tests
 
 	message(STATUS "---") # clan
 
 	message(STATUS "Add executable clan")
-	add_executable(clan_exe "source/clan.c")
+	add_executable(clan_exe "source/clan.c" ${backward_ENABLE} )
 	set_target_properties(clan_exe PROPERTIES OUTPUT_NAME "clan")
 	target_link_libraries(clan_exe clan_static ${OSL_LIBRARY})
 
@@ -190,7 +227,9 @@ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 # Install
 
 	install(TARGETS clan LIBRARY DESTINATION lib)
+	install(TARGETS clan-clang LIBRARY DESTINATION lib)
 	install(TARGETS clan_static ARCHIVE DESTINATION lib)
+	install(TARGETS clan-clang_static ARCHIVE DESTINATION lib)
 	install(DIRECTORY include/ DESTINATION include FILES_MATCHING PATTERN "*.h")
 	install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/include/" DESTINATION include FILES_MATCHING PATTERN "*.h")
 	install(FILES "${CMAKE_CURRENT_BINARY_DIR}/parser.h" DESTINATION include/clan)
