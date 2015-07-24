@@ -6,6 +6,7 @@ set(top_srcdir "${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
+set(OSL_LIBRARY osl)
 
 # User's settings - C Flags
 
@@ -105,7 +106,7 @@ SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
 
 # Library
 
-	function ( add_libraries libname sources bison_files )
+	function ( add_libraries libname sources bison_files flex_files )
 	message(STATUS "---")
 
 
@@ -115,7 +116,7 @@ SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
 		SHARED
 		${sources}
 		${bison_files}
-		${FLEX_clan_scanner_OUTPUTS}
+		${flex_files}
 		${backward_ENABLE}
 	)
 
@@ -130,7 +131,7 @@ SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
 		STATIC
 		${sources}
 		${bison_files}
-		${FLEX_clan_scanner_OUTPUTS}
+		${flex_files}
 		${backward_ENABLE}
 	)
 
@@ -152,7 +153,7 @@ SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
 	string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/source/clan.c;" "" sources "${sources}") # with ;
 	string(REPLACE "${CMAKE_CURRENT_SOURCE_DIR}/source/clan.c" "" sources "${sources}")  # without ;
 
-	add_libraries( clan "${sources}" "${BISON_clan_parser_OUTPUTS}" )
+	add_libraries( clan "${sources}" "${BISON_clan_parser_OUTPUTS}" ${FLEX_clan_scanner_OUTPUTS} )
 
 	find_package(LLVM REQUIRED CONFIG)
 
@@ -171,7 +172,7 @@ SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
 	# that we wish to use
 	llvm_map_components_to_libnames(llvm_libs support core irreader)
 
-	add_libraries( clan-clang "${sources}" "clang-parser.cpp" )
+	add_libraries( clan-clang "${sources}" "clang-parser.cpp" ${FLEX_clan_scanner_OUTPUTS} )
 
 	target_link_libraries(clan-clang clangASTMatchers clangDynamicASTMatchers )
 
@@ -217,12 +218,38 @@ SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
 					"${CMAKE_CURRENT_BINARY_DIR}/clan"
 				)
 			endif()
-			endforeach()
+		endforeach()
+		file(
+			GLOB_RECURSE
+			tests_clan_clang
+			tests_clan_clang/*.c
+		)
+
+		foreach(test ${tests_clan_clang})
+			message(STATUS "Add Test ${test}")
+			if("${test}" MATCHES "autoscop")
+			  #		      add_test(
+			  #			${test}
+			  #		      	"${CMAKE_CURRENT_SOURCE_DIR}/tests/check_source_result.py"
+			  #		      	"${test}"
+			  #		      	"${test}.scop"
+			  #		      	"${CMAKE_CURRENT_BINARY_DIR}/clan"
+			  #		      	"-autoscop"
+			  #		      )
+			else()
+				add_test(
+					"${test}_clan-clang"
+					"${CMAKE_CURRENT_SOURCE_DIR}/tests/check_source_result.py"
+					"${test}"
+					"${test}.scop"
+					"clan-clang_exe"
+				)
+			endif()
+		endforeach()
 
 		message(STATUS "---")
 
 	endif()
-
 
 # Install
 

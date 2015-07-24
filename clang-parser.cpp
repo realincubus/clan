@@ -106,6 +106,7 @@
 
    #define CLAN_DEBUG 1
 
+extern "C"{
    int  yylex(void);
    void yyerror(char*);
    void yyrestart(FILE*);
@@ -117,6 +118,7 @@
    int  clan_parser_nb_ld();
    void clan_parser_log(char*);
    void clan_parser_increment_loop_depth();
+   void clan_parser_decrement_loop_depth();
    void clan_parser_state_print(FILE*);
    int  clan_parser_is_loop_sane(osl_relation_list_p,osl_relation_list_p,int*);
    void clan_parser_state_initialize(clan_options_p);
@@ -175,6 +177,27 @@
    int            parser_access_length;  /**< Length of the access string*/
 
    using namespace std;
+
+/* Value type.  */
+#if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
+
+union YYSTYPE
+{
+ int value;                      /**< An integer value */
+         int* vecint;                    /**< A vector of integer values */
+         char* symbol;                   /**< A string for identifiers */
+         osl_vector_p affex;             /**< An affine expression */
+         osl_relation_p setex;           /**< A set of affine expressions */
+         osl_relation_list_p list;       /**< List of array accesses */
+         osl_statement_p stmt;           /**< List of statements */
+};
+
+typedef union YYSTYPE YYSTYPE;
+# define YYSTYPE_IS_TRIVIAL 1
+# define YYSTYPE_IS_DECLARED 1
+#endif
+
+YYSTYPE yylval;
 
 void yyerror(char *s) {
   int i, line = 1;
@@ -405,9 +428,17 @@ int clan_parser_nb_ld() {
 
 
 void clan_parser_increment_loop_depth() {
+  cerr << "incrementing parser_loop_depth " << endl;
   parser_loop_depth++;
   if ((parser_loop_depth + parser_if_depth) > CLAN_MAX_DEPTH)
     CLAN_error("CLAN_MAX_DEPTH reached, recompile with a higher value");
+}
+
+void clan_parser_decrement_loop_depth(){
+  cerr << "decrementing parser_loop_depth " << endl;
+  parser_loop_depth--;
+  if (parser_loop_depth < 0 )
+    CLAN_error("loop depth is negative");
 }
 
 
@@ -564,7 +595,11 @@ void clan_parser_reinitialize() {
 }
 
 
-#if 0
+void yyparse(){
+}
+
+
+#if 1
 /**
  * clan_parser_autoscop function:
  * this functions performs the automatic extraction of SCoPs from the input
@@ -726,6 +761,7 @@ osl_scop_p clan_parse(FILE* input, clan_options_p options) {
   return scop;
 }
 #endif
+}
 
 auto print_stack_trace(){
   using namespace backward;
@@ -841,19 +877,23 @@ auto to_char_str( string str ) {
 }
 
 auto handleInteger( const Expr* expr ){
+  cerr << __PRETTY_FUNCTION__ << endl;
   int* ret = nullptr;
   if ( auto integer_literal = dyn_cast_or_null<IntegerLiteral>( expr ) ){
+    expr->dumpColor();
     char* text = to_char_str( getString( integer_literal ) );
     ret = (int*)malloc( sizeof( int ) );
     *ret = atoi( text );
     free( text );
     return ret;
   } 
+  cerr << "not an integer literal" << endl;
   return ret;
 }
 
 // has to work with standard char pointers
 auto handleID( const Expr* expr ){
+  expr->dumpColor();
   cerr << __PRETTY_FUNCTION__ << endl;
   char* ret = nullptr;
 
@@ -871,6 +911,8 @@ auto handleID( const Expr* expr ){
 }
 
 auto handleID( const NamedDecl* decl ){
+  decl->dumpColor();
+  cerr << __PRETTY_FUNCTION__ << endl;
   char* ret = nullptr;
   auto declaration_name = decl->getDeclName();
   auto name_str = declaration_name.getAsString();
@@ -915,8 +957,8 @@ auto handleAffinePrimaryExpression( const Expr* expr ) {
   }
 
   auto integer = handleInteger( expr );
-  
   if ( integer ) {
+    expr->dumpColor();
     CLAN_debug("rule affine_primary_expression.2: INTEGER");
     auto ret = clan_vector_term(parser_symbol, *integer, NULL, parser_options->precision);
     CLAN_debug_call(osl_vector_dump(stderr, ret));
@@ -931,7 +973,6 @@ auto handleAffinePrimaryExpression( const Expr* expr ) {
 #endif
 
   cerr << "no ID nor a declRefExpr " << endl;
-  expr->dumpColor();
   return ret;
 
 }
@@ -940,9 +981,9 @@ auto handleAffinePrimaryExpression( const Expr* expr ) {
 auto handleAffineUnaryExpression( const Expr* expr ) {
   cerr << __PRETTY_FUNCTION__ << endl;
   auto affine_primary_expression = handleAffinePrimaryExpression( expr );
-  
   if ( affine_primary_expression ) {
       CLAN_debug("rule affine_unary_expression.1: affine_primary_expression");
+      expr->dumpColor();
       auto ret = affine_primary_expression;
       CLAN_debug_call(osl_vector_dump(stderr, ret));
       return ret;
@@ -958,7 +999,7 @@ auto handleAffineUnaryExpression( const Expr* expr ) {
     } else if ( opcode == "-" ) {
       is_neg = true;
     }
-    if ( !is_pos || !is_neg ) return (osl_vector_p)nullptr;
+    if ( !is_pos && !is_neg ) return (osl_vector_p)nullptr;
 
     auto affine_primary_expression = handleAffinePrimaryExpression( unary_operator->getSubExpr() );
 
@@ -985,6 +1026,7 @@ auto handleAffineMultiplicativeExpression( const Expr* expr ) {
   auto affine_unary_expression = handleAffineUnaryExpression( expr );
   if ( affine_unary_expression ){
       CLAN_debug("rule affine_multiplicative_expression.1: affine_unary_expression");
+      expr->dumpColor();
       auto ret = affine_unary_expression;
       CLAN_debug_call(osl_vector_dump(stderr, ret));
       return ret;
@@ -1002,7 +1044,7 @@ auto handleAffineMultiplicativeExpression( const Expr* expr ) {
     } else if ( opcode == "/" ) {
       is_div = true;
     }
-    if ( !is_mul || !is_div ) return (osl_vector_p)nullptr;
+    if ( !is_mul && !is_div ) return (osl_vector_p)nullptr;
 
     auto affine_multiplicative_expression = handleAffineMultiplicativeExpression( binary_operator->getLHS() );
     auto affine_unary_expression = handleAffineUnaryExpression( binary_operator->getRHS() );
@@ -1060,16 +1102,19 @@ auto handleAffineExpression( const Expr* expr ){
   auto affine_multiplicative_expression = handleAffineMultiplicativeExpression( expr );
 
   if ( affine_multiplicative_expression ) {
+    expr->dumpColor();
     CLAN_debug("rule affine_expression.1: affine_multiplicative_expression");
     auto ret = affine_multiplicative_expression;
     CLAN_debug_call(osl_vector_dump(stderr, ret));
     return ret;
   }
 
+  cerr << "in " << __PRETTY_FUNCTION__ << endl;
+  expr->dumpColor();
+
   auto binary_operator = dyn_cast_or_null<BinaryOperator>(expr);
-
   if ( binary_operator ) {
-
+    CLAN_debug( "rule affine_expression.2.0.1: is binary operator" );
     // operator type has to be + or -
     string opcode = binary_operator->getOpcodeStr();
     bool is_add = false;
@@ -1079,7 +1124,8 @@ auto handleAffineExpression( const Expr* expr ){
     } else if ( opcode == "-" ) {
       is_sub = true;
     }
-    if ( !is_add || !is_sub ) return (osl_vector_p)nullptr;
+    if ( is_add == false && is_sub == false ) return (osl_vector_p)nullptr;
+    CLAN_debug( "rule affine_expression.2.0.2: there is an operator + or -" );
     
     auto affine_expression = handleAffineExpression( binary_operator->getLHS() );
     auto affine_multiplicative_expression = handleAffineMultiplicativeExpression( binary_operator->getRHS() );
@@ -1131,9 +1177,10 @@ auto handleCeildFloord( Expr* expr ) {
 }
 
 auto handleCeildFloordExpression( const Expr* expr ){
+  cerr << __PRETTY_FUNCTION__ << endl;
   auto affine_expression = handleAffineExpression( expr );
-
   if ( affine_expression ) {
+    expr->dumpColor();
     CLAN_debug("affine_ceildloord_expression.1: affine_expression");
     auto ret = affine_expression;
     CLAN_debug_call(osl_vector_dump(stderr, ret));
@@ -1156,11 +1203,12 @@ auto handleCeildFloordExpression( const Expr* expr ){
 }
 
 osl_relation_p handleAffineMinMaxExpression( const Expr* expr ){
+  cerr << __PRETTY_FUNCTION__ << endl;
 
   // is either one of them
   auto affine_ceildfloord_expression = handleCeildFloordExpression( expr );
-  
   if ( affine_ceildfloord_expression ){
+      expr->dumpColor();
       CLAN_debug("rule affine_minmax_expression.1: <affex>");
       auto ret = osl_relation_from_vector(affine_ceildfloord_expression);
       osl_vector_free(affine_ceildfloord_expression);
@@ -1192,9 +1240,24 @@ auto handleLoopDeclaration( const Stmt* stmt ) {
   }
 }
 
-// TODO add the functionality to also allow assign statements
-osl_relation_p handleLoopInitialization( const Stmt* stmt ){
+auto handleLoopInitializersInitialization( const Expr * expr ) {
+  cerr << __PRETTY_FUNCTION__ << endl;
+  auto affine_minmax_expression = handleAffineMinMaxExpression( expr );
+  if ( affine_minmax_expression ){
+    expr->dumpColor();
+    CLAN_debug("rule initialization: ID = <setex>");
+    parser_xfor_index++;
+    //free($2);
+    auto ret = affine_minmax_expression;
+    CLAN_debug_call(osl_relation_dump(stderr, ret));
+    return ret;
+  }
+}
 
+osl_relation_p handleLoopInitialization( const Stmt* stmt ){
+  cerr << __PRETTY_FUNCTION__ << endl;
+
+  // initialized with a declaration
   if( auto loop_declaration = handleLoopDeclaration( stmt ) ){
     auto loop_declaration_1 = dyn_cast_or_null<VarDecl>(loop_declaration->getSingleDecl());
     if ( loop_declaration_1 ) {
@@ -1208,27 +1271,47 @@ osl_relation_p handleLoopInitialization( const Stmt* stmt ){
       }
 
       if ( loop_declaration_1->hasInit() ){
-	auto affine_minmax_expression = handleAffineMinMaxExpression( loop_declaration_1->getInit() );
-	if ( affine_minmax_expression ){
-	  CLAN_debug("rule initialization: ID = <setex>");
-	  parser_xfor_index++;
-	  //free($2);
-	  auto ret = affine_minmax_expression;
-	  CLAN_debug_call(osl_relation_dump(stderr, ret));
-	  return ret;
-	}	
+	return handleLoopInitializersInitialization( loop_declaration_1->getInit() );	
       }
     }
   }
+
+  // initialized with a assign operation
+  auto expr = dyn_cast_or_null<Expr>( stmt );
+  if ( expr ){
+    auto binary_operator = dyn_cast_or_null<BinaryOperator>( expr );
+    if ( binary_operator ) {
+      CLAN_debug("rule loop initialization.2: assign operation");
+      binary_operator->dumpColor();
+      auto ID = handleID( binary_operator->getLHS() );
+      auto opcode = binary_operator->getOpcodeStr();
+      if ( opcode == "=" ) {
+	if ( ID ) {
+	  cerr << "added new symbol " << ID << endl;
+	  if (!clan_symbol_new_iterator(&parser_symbol, parser_iterators, ID, parser_loop_depth)){
+	      YYABORT;
+	  }
+	}
+	cerr << "rhs of the assign operator " << endl;
+	binary_operator->getRHS()->dumpColor();
+	cerr << "done rhs of the assign operator " << endl;
+
+	return handleLoopInitializersInitialization( binary_operator->getRHS() );
+      }
+    }
+  }
+
 }
 
 // TODO make it also handle multiple initializations
 osl_relation_list_p handleLoopInitializationList( const Stmt* stmt ){
+  cerr << __PRETTY_FUNCTION__ << endl;
   osl_relation_list_p ret = nullptr;
 
   auto loop_initialization = handleLoopInitialization( stmt );
   if ( loop_initialization ){
     CLAN_debug("rule initialization_list.2: initialization ;");
+    stmt->dumpColor();
     parser_xfor_index = 0;
     ret = osl_relation_list_malloc();
     ret->elt = loop_initialization;
@@ -1790,8 +1873,11 @@ auto handleFOR( const Stmt* stmt ){
   }
 }
 
+// TODO add infinit loops
 auto handleIterationStatement( const Stmt* stmt ){
   cerr << __PRETTY_FUNCTION__ << endl;
+
+  osl_statement_p ret = nullptr;
   auto FOR = handleFOR( stmt );
   if ( FOR ) {
     auto loop_initialization_list = handleLoopInitializationList( FOR->getInit() );
@@ -1831,17 +1917,18 @@ auto handleIterationStatement( const Stmt* stmt ){
       parser_scattering[2*parser_loop_depth-1] = (loop_stride_list[0] > 0) ? 1 : -1;
       parser_scattering[2*parser_loop_depth] = 0;
       free(loop_stride_list);
-    }
     
-    auto loop_body = handleLoopBody( FOR->getBody() );
-    if (loop_body ){
-      CLAN_debug("rule iteration_statement.2.2: for ( init cond stride ) body");
-      auto ret = loop_body;
-      CLAN_debug_call(osl_statement_dump(stderr, ret));
-      return ret;
+      auto loop_body = handleLoopBody( FOR->getBody() );
+      if (loop_body ){
+	CLAN_debug("rule iteration_statement.2.2: for ( init cond stride ) body");
+	ret = loop_body;
+	CLAN_debug_call(osl_statement_dump(stderr, ret));
+	return ret;
+      }
+      
     }
   } 
-  // TODO add infinit loops
+  return ret;
 }
 
 
@@ -1855,19 +1942,19 @@ auto handleStatementList ( const Stmt* const* begin, const Stmt* const* end ){
   }
 
   // case 2: multiple statements
-  for( auto i = begin, e = end; i != e; ++i ){
-    auto statement_list = handleStatementList( i, (end - 1) );
-    auto statement = handleStatement( *(end - 1) );
-    osl_statement_add(&statement, statement);
-    return statement;
-  }
+  auto statement_list = handleStatementList( begin, end - 1 );
+  auto statement = handleStatement( *(end - 1) );
+  osl_statement_add(&statement_list, statement);
+  return statement_list;
 }
 
 auto handleCompoundStatement( const Stmt* stmt ){
   cerr << __PRETTY_FUNCTION__ << endl;
-  if ( auto compount_stmt = dyn_cast_or_null<CompoundStmt>( stmt ) ) {
-    auto ret = handleStatementList( compount_stmt->body_begin(), compount_stmt->body_end() );
-    return ret; 
+  if ( auto compound_stmt = dyn_cast_or_null<CompoundStmt>( stmt ) ) {
+    if ( compound_stmt->size() > 0 ) {
+      auto ret = handleStatementList( compound_stmt->body_begin(), compound_stmt->body_end() );
+      return ret; 
+    }
   }
 }
 
@@ -1962,6 +2049,10 @@ auto handleArgumentExpressionList( const Expr* const* expressions, int n_express
   }
 }
 
+auto ignoreImplicitCastExpressions( const Expr* expr ){
+  return expr->IgnoreImpCasts();
+}
+
 auto handlePostfixExpression( const Expr* expr ){
   auto primary_expression = handlePrimaryExpression( expr );
   if ( primary_expression ) {
@@ -1971,15 +2062,16 @@ auto handlePostfixExpression( const Expr* expr ){
   // TODO also handle a[4] and 4[a]
   auto subscript_expression = dyn_cast_or_null<ArraySubscriptExpr>( expr );
   if ( subscript_expression ){
-    auto postfix_expression = handlePostfixExpression( subscript_expression->getLHS() );
-    auto affine_expression = handleAffineExpression( subscript_expression->getRHS() );
+    auto postfix_expression = handlePostfixExpression( ignoreImplicitCastExpressions( subscript_expression->getLHS() ) );
+    auto affine_expression = handleAffineExpression(   ignoreImplicitCastExpressions( subscript_expression->getRHS() ) );
     if ( affine_expression ){
       if (parser_options->extbody)
         parser_access_length = strlen(parser_record) - parser_access_start;
 
       CLAN_debug("rule postfix_expression.2: postfix_expression [ <affex> ]");
-      if (!clan_symbol_update_type(parser_symbol, postfix_expression, CLAN_TYPE_ARRAY))
+      if (!clan_symbol_update_type(parser_symbol, postfix_expression, CLAN_TYPE_ARRAY)){
         YYABORT;
+      }
       clan_relation_new_output_vector(postfix_expression->elt, affine_expression);
       osl_vector_free(affine_expression);
       auto ret = postfix_expression;
@@ -2022,6 +2114,7 @@ auto handlePostfixExpression( const Expr* expr ){
 
     auto postfix_expression = handlePostfixExpression( member_access->getBase() );
     // TODO needs custom implementation of ID handling
+    assert( 0 && "not implemented" );
 #if 0
     auto ID = handleID( member_access );
 
@@ -2457,8 +2550,9 @@ osl_relation_list_p handleExpression( const Expr* expr ){
   // TODO handle expression , assign 
 }
 
-auto handleExpressionStatement( const Stmt* stmt ){
+osl_statement_p handleExpressionStatement( const Stmt* stmt ){
   cerr << __PRETTY_FUNCTION__ << endl;
+  osl_statement_p ret = nullptr;
 
   if (parser_options->extbody) {
     parser_access_start = -1;
@@ -2470,64 +2564,68 @@ auto handleExpressionStatement( const Stmt* stmt ){
   CLAN_strdup(parser_record, statement_str.c_str());
   parser_recording = CLAN_TRUE;
 
-  auto expression = handleExpression( dyn_cast_or_null<Expr>(stmt) );
-  if ( expression ) {
-    osl_statement_p statement;
-    osl_body_p body;
-    osl_generic_p gen;
-    
-    CLAN_debug("rule expression_statement.2: expression ;");
-    statement = osl_statement_malloc();
+  auto expr = dyn_cast_or_null<Expr>(stmt);
+  if ( expr ) {
+    auto expression = handleExpression( expr );
+    if ( expression ) {
+      osl_statement_p statement;
+      osl_body_p body;
+      osl_generic_p gen;
+      
+      CLAN_debug("rule expression_statement.2: expression ;");
+      statement = osl_statement_malloc();
 
-    // - 1. Domain
-    if (clan_relation_list_nb_elements(parser_stack->constraints) != 1) {
-      yyerror("missing label on a statement inside an xfor loop");
-      YYABORT;
-    }
-    statement->domain = osl_relation_clone(parser_stack->constraints->elt);
-    osl_relation_set_type(statement->domain, OSL_TYPE_DOMAIN);
-    osl_relation_set_attributes(statement->domain, parser_loop_depth, 0,
-				clan_parser_nb_ld(), CLAN_MAX_PARAMETERS);
+      // - 1. Domain
+      if (clan_relation_list_nb_elements(parser_stack->constraints) != 1) {
+	yyerror("missing label on a statement inside an xfor loop");
+	YYABORT;
+      }
+      statement->domain = osl_relation_clone(parser_stack->constraints->elt);
+      osl_relation_set_type(statement->domain, OSL_TYPE_DOMAIN);
+      osl_relation_set_attributes(statement->domain, parser_loop_depth, 0,
+				  clan_parser_nb_ld(), CLAN_MAX_PARAMETERS);
 
-    // - 2. Scattering
-    statement->scattering = clan_relation_scattering(parser_scattering,
-	parser_loop_depth, parser_options->precision);
+      // - 2. Scattering
+      statement->scattering = clan_relation_scattering(parser_scattering,
+	  parser_loop_depth, parser_options->precision);
 
-    // - 3. Array accesses
-    statement->access = expression;
+      // - 3. Array accesses
+      statement->access = expression;
 
-    // - 4. Body.
-    body = osl_body_malloc();
-    body->iterators = clan_symbol_array_to_strings(parser_iterators,
-	parser_loop_depth, parser_xfor_depths, parser_xfor_labels);
-    body->expression = osl_strings_encapsulate(parser_record);
-    gen = osl_generic_shell(body, osl_body_interface());
-    osl_generic_add(&statement->extension, gen);
+      // - 4. Body.
+      body = osl_body_malloc();
+      body->iterators = clan_symbol_array_to_strings(parser_iterators,
+	  parser_loop_depth, parser_xfor_depths, parser_xfor_labels);
+      body->expression = osl_strings_encapsulate(parser_record);
+      gen = osl_generic_shell(body, osl_body_interface());
+      osl_generic_add(&statement->extension, gen);
 
-    if (parser_options->extbody) {
-      // Extended body
+      if (parser_options->extbody) {
+	// Extended body
 
-      // add the last access
-      if (parser_access_start != -1) {
-	osl_extbody_add(parser_access_extbody,
-			parser_access_start,
-			parser_access_length);
+	// add the last access
+	if (parser_access_start != -1) {
+	  osl_extbody_add(parser_access_extbody,
+			  parser_access_start,
+			  parser_access_length);
+	}
+
+	parser_access_extbody->body = osl_body_clone(body);
+	gen = osl_generic_shell(parser_access_extbody, osl_extbody_interface());
+	osl_generic_add(&statement->extension, gen);
       }
 
-      parser_access_extbody->body = osl_body_clone(body);
-      gen = osl_generic_shell(parser_access_extbody, osl_extbody_interface());
-      osl_generic_add(&statement->extension, gen);
+      parser_recording = CLAN_FALSE;
+      parser_record = NULL;
+      
+      parser_scattering[2*parser_loop_depth]++;
+
+      ret = statement;
+      CLAN_debug_call(osl_statement_dump(stderr, ret));
+      return ret;
     }
-
-    parser_recording = CLAN_FALSE;
-    parser_record = NULL;
-    
-    parser_scattering[2*parser_loop_depth]++;
-
-    auto ret = statement;
-    CLAN_debug_call(osl_statement_dump(stderr, ret));
-    return ret;
   }
+  return ret;
 }
 
 // TODO continue there is a lot more about statements
@@ -2575,12 +2673,14 @@ osl_statement_p handleLoopBody( const Stmt* stmt ){
   auto statement = handleStatement( stmt );
   if ( statement ) {
     CLAN_debug("rule loop_body.1: <stmt>");
-    parser_loop_depth--;
+    clan_parser_decrement_loop_depth();
+    assert( parser_loop_depth >= 0 && "parser_loop_depth negative" );
     clan_symbol_free(parser_iterators[parser_loop_depth]);
     parser_iterators[parser_loop_depth] = NULL;
     clan_domain_drop(&parser_stack);
     ret = statement;
     parser_scattering[2*parser_loop_depth]++;
+    assert( parser_loop_depth + parser_if_depth >= 0 && "expr negative" );
     parser_nb_local_dims[parser_loop_depth + parser_if_depth] = 0;
     CLAN_debug_call(osl_statement_dump(stderr, ret));
     return ret;
@@ -2807,6 +2907,11 @@ StatementMatcher makeIterationStmtMatcher(){
 #if 1
       hasIncrement(
 	makeLoopStrideMatcher()
+      ),
+      unless(
+	hasAncestor(
+	  forStmt()
+	)
       )
 #endif
   ).bind(FOR_LOOP_ID); 
