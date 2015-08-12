@@ -1855,7 +1855,7 @@ auto handleSelectionStatement( const Stmt* stmt ){
 	         "[else <stmt>]");
       clan_domain_drop(&parser_stack);
       auto ret = statement;
-      osl_statement_add(&statement, selection_else_statement);
+      osl_statement_add(&ret, selection_else_statement);
       parser_if_depth--;
       parser_nb_local_dims[parser_loop_depth + parser_if_depth] = 0;
       CLAN_debug_call(osl_statement_dump(stderr, ret));
@@ -1881,51 +1881,51 @@ auto handleIterationStatement( const Stmt* stmt ){
   auto FOR = handleFOR( stmt );
   if ( FOR ) {
     auto loop_initialization_list = handleLoopInitializationList( FOR->getInit() );
-    auto loop_condition_list = handleLoopConditionList( FOR->getCond() );
-    auto loop_stride_list = handleLoopStrideList( FOR->getInc() );
+    if ( loop_initialization_list ) {
+      auto loop_condition_list = handleLoopConditionList( FOR->getCond() );
+      if ( loop_condition_list ) {
+	auto loop_stride_list = handleLoopStrideList( FOR->getInc() );
+	if ( loop_stride_list ) {
+	  CLAN_debug("rule iteration_statement.2.1: for ( init cond stride ) ...");
+	  parser_xfor_labels[parser_loop_depth] = 0;
+	  clan_parser_increment_loop_depth();
+	 
+	  // Check there is only one element in each list
+	  if (parser_xfor_index != 1) {
+	    yyerror("unsupported element list in a for loop");
+	    osl_relation_list_free(loop_initialization_list);
+	    osl_relation_list_free(loop_condition_list);
+	    free(loop_stride_list);
+	    YYABORT;
+	  }
 
-    cerr << "loop stride is " << loop_stride_list[0] << endl;
+	  // Check loop bounds and stride consistency and reset sanity sentinels.
+	  if (!clan_parser_is_loop_sane(loop_initialization_list, loop_condition_list, loop_stride_list))
+	    YYABORT;
 
-    if ( loop_initialization_list && loop_condition_list && loop_stride_list ) {
-      CLAN_debug("rule iteration_statement.2.1: for ( init cond stride ) ...");
-      parser_xfor_labels[parser_loop_depth] = 0;
-      clan_parser_increment_loop_depth();
-     
-      // Check there is only one element in each list
-      if (parser_xfor_index != 1) {
-	yyerror("unsupported element list in a for loop");
-	osl_relation_list_free(loop_initialization_list);
-        osl_relation_list_free(loop_condition_list);
-	free(loop_stride_list);
-        YYABORT;
+	  // Add the constraints contributed by the for loop to the domain stack.
+	  clan_domain_dup(&parser_stack);
+	  clan_domain_for(parser_stack, parser_loop_depth, parser_symbol,
+			  loop_initialization_list->elt, loop_condition_list->elt, loop_stride_list[0], parser_options);
+
+	  parser_xfor_index = 0;
+	  osl_relation_list_free(loop_initialization_list);
+	  osl_relation_list_free(loop_condition_list);
+	  loop_initialization_list = NULL; // To avoid conflicts with the destructor TODO: avoid that.
+	  loop_condition_list = NULL;
+	  parser_scattering[2*parser_loop_depth-1] = (loop_stride_list[0] > 0) ? 1 : -1;
+	  parser_scattering[2*parser_loop_depth] = 0;
+	  free(loop_stride_list);
+	
+	  auto loop_body = handleLoopBody( FOR->getBody() );
+	  if (loop_body ){
+	    CLAN_debug("rule iteration_statement.2.2: for ( init cond stride ) body");
+	    ret = loop_body;
+	    CLAN_debug_call(osl_statement_dump(stderr, ret));
+	    return ret;
+	  }
+	}
       }
-
-      // Check loop bounds and stride consistency and reset sanity sentinels.
-      if (!clan_parser_is_loop_sane(loop_initialization_list, loop_condition_list, loop_stride_list))
-        YYABORT;
-
-      // Add the constraints contributed by the for loop to the domain stack.
-      clan_domain_dup(&parser_stack);
-      clan_domain_for(parser_stack, parser_loop_depth, parser_symbol,
-	              loop_initialization_list->elt, loop_condition_list->elt, loop_stride_list[0], parser_options);
-
-      parser_xfor_index = 0;
-      osl_relation_list_free(loop_initialization_list);
-      osl_relation_list_free(loop_condition_list);
-      loop_initialization_list = NULL; // To avoid conflicts with the destructor TODO: avoid that.
-      loop_condition_list = NULL;
-      parser_scattering[2*parser_loop_depth-1] = (loop_stride_list[0] > 0) ? 1 : -1;
-      parser_scattering[2*parser_loop_depth] = 0;
-      free(loop_stride_list);
-    
-      auto loop_body = handleLoopBody( FOR->getBody() );
-      if (loop_body ){
-	CLAN_debug("rule iteration_statement.2.2: for ( init cond stride ) body");
-	ret = loop_body;
-	CLAN_debug_call(osl_statement_dump(stderr, ret));
-	return ret;
-      }
-      
     }
   } 
   return ret;
@@ -1984,6 +1984,8 @@ auto handleAssignmentOperator( const Expr* expr ){
 }
 
 auto handlePrimaryExpression( const Expr* expr ){
+  cerr << __PRETTY_FUNCTION__ << endl;
+  osl_relation_list_p ret = nullptr;
   auto ID = handleID( expr );
   if ( ID ) {
     int nb_columns;
@@ -2016,10 +2018,11 @@ auto handlePrimaryExpression( const Expr* expr ){
     }
 
     free(ID);
-    auto ret = list;
+    ret = list;
     CLAN_debug_call(osl_relation_list_dump(stderr, ret));
     return list;
   }
+  // TODO i think all of this can be removed
   auto integer = handleInteger( expr );
   if ( integer ) {
     return (osl_relation_list_p)nullptr;
@@ -2029,6 +2032,9 @@ auto handlePrimaryExpression( const Expr* expr ){
   // TODO STRING_LITERAL
   
   // TODO parenthesis expression
+  cerr << "was not recognized as something usefull" << endl;
+  expr->dumpColor();
+  return ret;
 }
 
 osl_relation_list_p handleAssignmentExpression( const Expr* expr );
@@ -2165,6 +2171,7 @@ auto handlePostfixExpression( const Expr* expr ){
       return ret;
     }
   }
+  return (osl_relation_list_p)nullptr;
 }
 
 osl_relation_list_p handleCastExpression( const Expr* expr );
@@ -2218,6 +2225,7 @@ auto handleUnaryExpression( const Expr* expr ){
     assert( 0 && "add the check whether this is really a sizeof_expression" );
     return handleUnaryExpression( sizeof_expression->getArgumentExpr() );
   }
+  return (osl_relation_list_p)nullptr;
 
 }
 
@@ -2234,6 +2242,7 @@ osl_relation_list_p handleCastExpression( const Expr* expr ){
       return cast_expression_subexpr;
     }
   }
+  return (osl_relation_list_p)nullptr;
 
 }
 
@@ -2258,8 +2267,7 @@ auto handleMultiplicativeExpression( const Expr* expr ){
     }
   }
  
- 
-
+  return (osl_relation_list_p)nullptr;
 }
 
 auto handleAdditiveExpression( const Expr* expr ){
@@ -2283,7 +2291,7 @@ auto handleAdditiveExpression( const Expr* expr ){
     }
   }
  
-
+  return (osl_relation_list_p)nullptr;
 }
 
 auto handleShiftExpression( const Expr* expr ){
@@ -2308,6 +2316,7 @@ auto handleShiftExpression( const Expr* expr ){
   }
 
 
+  return (osl_relation_list_p)nullptr;
 }
 
 auto handleRelationalExpression( const Expr* expr ){
@@ -2331,6 +2340,7 @@ auto handleRelationalExpression( const Expr* expr ){
     }
   }
   
+  return (osl_relation_list_p)nullptr;
 }
 
 auto handleEqualityExpression( const Expr* expr ){
@@ -2355,6 +2365,7 @@ auto handleEqualityExpression( const Expr* expr ){
   }
   
 
+  return (osl_relation_list_p)nullptr;
 }
 
 auto handleAndExpression( const Expr* expr ){
@@ -2378,6 +2389,7 @@ auto handleAndExpression( const Expr* expr ){
     }
   }
   
+  return (osl_relation_list_p)nullptr;
 }
 
 auto handleExclusiveOrExpression( const Expr* expr ){
@@ -2400,6 +2412,7 @@ auto handleExclusiveOrExpression( const Expr* expr ){
     }
   }
   
+  return (osl_relation_list_p)nullptr;
 }
 
 auto handleInclusiveOrExpression( const Expr* expr ){
@@ -2422,6 +2435,7 @@ auto handleInclusiveOrExpression( const Expr* expr ){
       }
     }
   }
+  return (osl_relation_list_p)nullptr;
 }
 
 auto handleLogicalAndExpression( const Expr* expr ){
@@ -2444,6 +2458,7 @@ auto handleLogicalAndExpression( const Expr* expr ){
     }
   }
   
+  return (osl_relation_list_p)nullptr;
 }
 
 auto handleLogicalOrExpression( const Expr* expr ){
@@ -2467,6 +2482,7 @@ auto handleLogicalOrExpression( const Expr* expr ){
   }
 
 
+  return (osl_relation_list_p)nullptr;
 }
 
 osl_relation_list_p handleExpression( const Expr* expr );
@@ -2493,6 +2509,7 @@ auto handleConditionalExpression( const Expr* expr ){
       return ret;
     }
   }
+  return (osl_relation_list_p)nullptr;
 }
 
 
@@ -2539,6 +2556,7 @@ osl_relation_list_p handleAssignmentExpression( const Expr* expr ){
       return ret;
     }
   }
+  return (osl_relation_list_p)nullptr;
 }
 
 osl_relation_list_p handleExpression( const Expr* expr ){
@@ -2548,6 +2566,7 @@ osl_relation_list_p handleExpression( const Expr* expr ){
   }
 
   // TODO handle expression , assign 
+  return (osl_relation_list_p)nullptr;
 }
 
 osl_statement_p handleExpressionStatement( const Stmt* stmt ){
@@ -2637,11 +2656,6 @@ osl_statement_p handleStatement( const Stmt* stmt ){
   if ( labeled_statement ) {
     return labeled_statement;
   }
-
-  auto expression_statement = handleExpressionStatement( stmt );
-  if ( expression_statement ) {
-    return expression_statement;
-  }
 #endif
 
   auto compound_statement = handleCompoundStatement( stmt );
@@ -2688,7 +2702,7 @@ osl_statement_p handleLoopBody( const Stmt* stmt ){
   return ret;
 }
 
-void handleForLoop( const MatchFinder::MatchResult &Result ){
+void handleForLoop( const MatchFinder::MatchResult &Result, string filename ){
 
   static bool once = true;
   if ( once ) {
@@ -2761,7 +2775,7 @@ void handleForLoop( const MatchFinder::MatchResult &Result ){
     clan_symbol_free(parser_symbol);
     clan_parser_state_initialize(parser_options);
     CLAN_debug_call(osl_scop_dump(stderr, scop));
-    FILE* output = fopen("test.scop", "w");
+    FILE* output = fopen(filename.c_str(), "w");
     clan_scop_print(output, scop, parser_options);
     fclose( output );
   }

@@ -70,6 +70,10 @@ This way the user might be able to fix the problem so that the optimization can 
 
 
 2015-07-21 16:42 a simple example that contains one loop and an if statement works
+2015-07-24 14:08 i have a clang tool that calls the functions provided in clan-clang 
+		 this tool can work as a replacement for clan and the tests for clan can be 
+                 performed with this tool. 
+                 right now it can run the gauss.c test 
 
 Tasks
 _____
