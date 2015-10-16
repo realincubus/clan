@@ -13,14 +13,21 @@ set(OSL_LIBRARY osl)
 # 	set(release "TRUE")
 	set(release "FALSE")
 
+	# clang flags -DCLANG_ENABLE_ARCMT -DCLANG_ENABLE_OBJC_REWRITER
+	# -DCLANG_ENABLE_STATIC_ANALYZER -DGTEST_HAS_RTTI=0 -D_GNU_SOURCE
+	# -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS
+	# -D__STDC_LIMIT_MACROS -fPIC -fvisibility-inlines-hidden  
+	# -std=c++11 -fno-common
+	# -Woverloaded-virtual -fno-strict-aliasing -g -fPIC
+
 	# Release
 	if (release)
 	  set(CMAKE_C_FLAGS "-O3 -fPIC")
-	  set(CMAKE_CXX_FLAGS "-O3 -std=c++14 -fno-rtti")
+	  set(CMAKE_CXX_FLAGS "-O3 -std=c++14 ")
 	# Debug # valgrind --show-reachable=yes --leak-check=full -v exe
 	else()
 	  set(CMAKE_C_FLAGS "-O0 -g3 -fPIC")
-	  set(CMAKE_CXX_FLAGS "-O0 -std=c++14 -fPIC -fno-rtti")
+	  set(CMAKE_CXX_FLAGS "-O0 -std=c++14 -fno-exceptions -fno-rtti -fPIC -fvisibility-inlines-hidden -fno-omit-frame-pointer")
 	endif()
 
 # User's settings - General C Flags
@@ -90,7 +97,7 @@ set(OSL_LIBRARY osl)
 	# clan
 	include_directories("./include")
 
-	add_subdirectory( backward-cpp)
+	#add_subdirectory( backward-cpp)
 
 
 # Compiler log
@@ -120,7 +127,7 @@ set(OSL_LIBRARY osl)
 		${backward_ENABLE}
 	)
 
-        add_backward( ${libname} )
+      #add_backward( ${libname} )
 	target_link_libraries(${libname} ${OSL_LIBRARY})
 	get_property(clan_lib_location TARGET ${libname} PROPERTY LOCATION)
 	message(STATUS "Add ${libname} library (shared) ${clan_lib_location}")
@@ -135,7 +142,7 @@ set(OSL_LIBRARY osl)
 		${backward_ENABLE}
 	)
 
-        add_backward( ${libname}_static )
+      #add_backward( ${libname}_static )
 	set_target_properties(${libname}_static PROPERTIES OUTPUT_NAME ${libname})
 	target_link_libraries(${libname}_static ${OSL_LIBRARY})
 	get_property(clan_static_lib_location TARGET ${libname}_static PROPERTY LOCATION)
@@ -174,7 +181,7 @@ set(OSL_LIBRARY osl)
 
 	add_libraries( clan-clang "${sources}" "clang-parser.cpp" ${FLEX_clan_scanner_OUTPUTS} )
 
-	target_link_libraries(clan-clang clangASTMatchers clangDynamicASTMatchers )
+	target_link_libraries(clan-clang )
 
 # Executables & tests
 
@@ -184,6 +191,10 @@ set(OSL_LIBRARY osl)
 	add_executable(clan_exe "source/clan.c" ${backward_ENABLE} )
 	set_target_properties(clan_exe PROPERTIES OUTPUT_NAME "clan")
 	target_link_libraries(clan_exe clan_static ${OSL_LIBRARY})
+
+	#add_executable(clan-clang_exe "source/clan-clang.c" ${backward_ENABLE} )
+	#set_target_properties(clan-clang_exe PROPERTIES OUTPUT_NAME "clan-clang")
+	#target_link_libraries(clan-clang_exe clan-clang ${OSL_LIBRARY})
 
 	# clan test
 	find_package(PythonInterp)

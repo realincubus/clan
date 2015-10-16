@@ -54,6 +54,18 @@
 void yyerror(char*);
 
 
+
+char* my_strdup( const char* in ){
+  int len = strlen( in );
+  char* ret = (char*)malloc(sizeof(char)*len);
+  if( !ret ) 
+    printf("could not allocate memory\n");
+
+  strcpy( ret, in );
+  ret[len] = '\0';
+  return ret;
+}
+
 /*+****************************************************************************
  *                          Structure display function                        *
  ******************************************************************************/
@@ -296,10 +308,14 @@ int clan_symbol_generate_new_key(clan_symbol_p table) {
  * \param[in]     symbol The symbol to add to the table.
  */
 void clan_symbol_push_at_end(clan_symbol_p* table, clan_symbol_p symbol) {
+  printf("table %d\n", table);
+  printf("*table %d\n", *table);
+  printf("symbol %d\n", symbol);
   clan_symbol_p tmp = *table;
 
   // We put the symbol at the end of the table.
   if (*table == NULL) {
+    printf("*table is 0\n");
     *table = symbol;
   } else {
     while (tmp->next != NULL)
@@ -322,17 +338,23 @@ void clan_symbol_push_at_end(clan_symbol_p* table, clan_symbol_p symbol) {
  */
 clan_symbol_p clan_symbol_add(clan_symbol_p* table, char* identifier,
                               int type) {
+  printf("clan symbol_add\n");
   clan_symbol_p symbol;
 
   // If the identifier is already in the table, do nothing.
   symbol = clan_symbol_lookup(*table, identifier);
-  if (symbol != NULL)
+  if (symbol != NULL){
+    printf("symbol is already in the table\n");
     return symbol;
+  }
 
   // Else, we allocate and fill a new clan_symbol_t node.
   symbol = clan_symbol_malloc();
   symbol->key = clan_symbol_generate_new_key(*table);
-  symbol->identifier = strdup(identifier);
+  printf("new symbol with identifier %s\n", identifier);
+  printf("used ptr %d\n", identifier);
+  symbol->identifier = my_strdup(identifier);
+  printf("new symbol with identifier dup %s\n", symbol->identifier);
   symbol->type = type;
 
   // We put the new symbol at the end of the table.
@@ -511,10 +533,16 @@ osl_generic_p clan_symbol_to_strings(clan_symbol_p symbol, int type) {
 * \return The clone of the symbol (and this symbol only).
 */
 clan_symbol_p clan_symbol_clone_one(clan_symbol_p symbol) {
+  printf("clan_symbol_clone_one\n");
+  printf("symbol %d\n",symbol);
   clan_symbol_p clone = clan_symbol_malloc();
 
-  if (symbol->identifier != NULL)
-    clone->identifier = strdup(symbol->identifier);
+  printf("before identifier\n");
+  if (symbol->identifier != NULL){
+    printf("befor strdup %s\n", symbol->identifier);
+    clone->identifier = my_strdup(symbol->identifier);
+  }
+  printf("after identifier\n");
   clone->type = symbol->type;
   clone->rank = symbol->rank;
 
@@ -565,7 +593,6 @@ osl_generic_p clan_symbol_to_arrays(clan_symbol_p symbol) {
   return generic;
 }
 
-
 /**
  * clan_symbol_new_iterator function:
  * this function return 1 if it succeeds to register (or to update) an
@@ -580,8 +607,14 @@ osl_generic_p clan_symbol_to_arrays(clan_symbol_p symbol) {
  */
 int clan_symbol_new_iterator(clan_symbol_p* table, clan_symbol_p* array,
                              char* id, int depth) {
+  printf("array %d\n", array);
+  printf("*array %d\n", *array);
+  printf("depth %d\n", depth);
+
+  printf("before_clang_symbol_add\n");
   clan_symbol_p symbol;
   symbol = clan_symbol_add(table, id, CLAN_TYPE_ITERATOR);
+  printf("after_clang_symbol_add\n");
 
   // Ensure that the returned symbol was either a new one, or of the same type.
   if (symbol->type != CLAN_TYPE_ITERATOR) {
@@ -593,6 +626,8 @@ int clan_symbol_new_iterator(clan_symbol_p* table, clan_symbol_p* array,
   if (symbol->rank != depth + 1)
     symbol->rank = depth + 1;
 
+  printf("attempting to push at end \n");
+  printf("array[depth] %d\n",array[depth]);
   clan_symbol_push_at_end(&array[depth], clan_symbol_clone_one(symbol));
   return 1;
 }

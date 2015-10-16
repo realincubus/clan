@@ -63,48 +63,72 @@
 /* Copy the first part of user declarations.  */
 //#line 46 "source/parser.y" /* yacc.c:339  */
 
-   #include <stdio.h>
-   #include <stdlib.h>
-   #include <string.h>
-   #include <assert.h>
-   #include <unistd.h>
-   #include <termios.h>
-   #include <execinfo.h>
-   
-   #include <osl/macros.h>
-   #include <osl/int.h>
-   #include <osl/vector.h>
-   #include <osl/relation.h>
-   #include <osl/statement.h>
-   #include <osl/strings.h>
-   #include <osl/generic.h>
-   #include <osl/body.h>
-   #include <osl/extensions/arrays.h>
-   #include <osl/extensions/extbody.h>
-   #include <osl/scop.h>
-   #include <clan/macros.h>
-   #include <clan/vector.h>
-   #include <clan/relation.h>
-   #include <clan/relation_list.h>
-   #include <clan/domain.h>
-   #include <clan/scop.h>
-   #include <clan/symbol.h>
-   #include <clan/statement.h>
-   #include <clan/options.h>
+// C includes
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
+#include <unistd.h>
+#include <termios.h>
+#include <execinfo.h>
 
-   #include <clang/AST/AST.h>
-   #include <clang/ASTMatchers/ASTMatchers.h>
-   #include <clang/ASTMatchers/ASTMatchFinder.h>
-   #include <clang/Lex/Lexer.h>
+extern "C"{
+#include <clan/macros.h>
+#include <clan/vector.h>
+#include <clan/relation.h>
+#include <clan/relation_list.h>
+#include <clan/domain.h>
+#include <clan/scop.h>
+#include <clan/symbol.h>
+#include <clan/statement.h>
+#include <clan/options.h>
+}
 
-   #define BACKWARD_HAS_DW 1
-   //#define BACKWARD_HAS_BFD 1
-   #include "backward.hpp"
+// C++ includes 
 
-   #include <string> 
-   #include <iostream>
+#include <fstream>
+#include <cstdio>
+#include <osl/macros.h>
+#include <osl/int.h>
+#include <osl/vector.h>
+#include <osl/relation.h>
+#include <osl/statement.h>
+#include <osl/strings.h>
+#include <osl/generic.h>
+#include <osl/body.h>
+#include <osl/extensions/arrays.h>
+#include <osl/extensions/extbody.h>
+#include <osl/scop.h>
+#include <clang/AST/AST.h>
+#include <clang/Lex/Lexer.h>
 
-   #define CLAN_DEBUG 1
+#define BACKWARD_HAS_DW 1
+//#define BACKWARD_HAS_BFD 1
+//#include "backward.hpp"
+
+#include <string> 
+#include <iostream>
+
+#define CLAN_DEBUG 1
+
+#undef CLAN_debug 
+
+std::ofstream logg;
+
+#define logg cout 
+
+#define CLAN_debug(x) \
+         do {                                                              \
+           if (CLAN_DEBUG)                                                 \
+             logg << "[Clan] Debug: " << __PRETTY_FUNCTION__ <<  x << endl;    \
+         } while (0)
+
+#define YYABORT \
+  do {\
+  logg << "exiting at " << __FILE__ << " " << __LINE__ << " " << __PRETTY_FUNCTION__ << endl;\
+  exit(-1);\
+  }while(0)
+
 
 extern "C"{
    int  yylex(void);
@@ -119,7 +143,7 @@ extern "C"{
    void clan_parser_log(char*);
    void clan_parser_increment_loop_depth();
    void clan_parser_decrement_loop_depth();
-   void clan_parser_state_print(FILE*);
+   //void clan_parser_state_print(FILE*);
    int  clan_parser_is_loop_sane(osl_relation_list_p,osl_relation_list_p,int*);
    void clan_parser_state_initialize(clan_options_p);
    osl_scop_p clan_parse(FILE*, clan_options_p);
@@ -247,7 +271,7 @@ void yyerror(char *s) {
   parser_error = CLAN_TRUE;
 }
 
-
+#if 0
 /**
  * clan_parser_state_print function:
  * this function "pretty" prints the parser state to a file.
@@ -400,6 +424,7 @@ void clan_parser_state_print(FILE* file) {
   
   fprintf(file, "|\n");
 }
+#endif
 
 
 void clan_parser_add_ld() {
@@ -428,14 +453,14 @@ int clan_parser_nb_ld() {
 
 
 void clan_parser_increment_loop_depth() {
-  cerr << "incrementing parser_loop_depth " << endl;
+  logg << "incrementing parser_loop_depth " << endl;
   parser_loop_depth++;
   if ((parser_loop_depth + parser_if_depth) > CLAN_MAX_DEPTH)
     CLAN_error("CLAN_MAX_DEPTH reached, recompile with a higher value");
 }
 
 void clan_parser_decrement_loop_depth(){
-  cerr << "decrementing parser_loop_depth " << endl;
+  logg << "decrementing parser_loop_depth " << endl;
   parser_loop_depth--;
   if (parser_loop_depth < 0 )
     CLAN_error("loop depth is negative");
@@ -763,16 +788,17 @@ osl_scop_p clan_parse(FILE* input, clan_options_p options) {
 #endif
 }
 
+#if 0
 auto print_stack_trace(){
   using namespace backward;
   StackTrace st; st.load_here(32);
   Printer p; p.print(st);
 }
+#endif
 
 using namespace clang;
-using namespace clang::ast_matchers;
 
-#define YYABORT exit(-1)
+#if 0
 const char* SCOP_ID = "scop";
 const char* FOR_LOOP_ID = "for_loop";
 const char* LOOP_ITERATOR_ID = "loop_iterator";
@@ -784,22 +810,30 @@ const char* INCREMENT_ONE_ID = "increment_one";
 
 const char* CEILD_ID = "ceild";
 const char* FLOORD_ID = "floord";
-
+#endif
 template <typename T>
 inline std::string getString(const T *node, const SourceManager &SM) {
+  cout << __PRETTY_FUNCTION__ << endl;
+  cout << "node ptr " << node << endl;
   SourceLocation expr_start = node->getLocStart();
   SourceLocation expr_end = node->getLocEnd();
-  return Lexer::getSourceText(
+  cout << "got locations" << endl;
+  cout << "start line number: " << SM.getSpellingLineNumber( expr_start ) << endl;
+  auto ret = Lexer::getSourceText(
       CharSourceRange::getTokenRange(SourceRange(expr_start, expr_end)), SM,
       LangOptions());
+  cout << "lexed text: " << string(ret) << endl;;
+  return ret;
 }
 
+#if 0
 template <typename T>
 string getString( const T* node, const MatchFinder::MatchResult &Result ){
   ASTContext& context = *Result.Context;
   SourceManager& SM = context.getSourceManager();
   return getString( node, SM ); 
 }
+#endif
 
 SourceManager* global_SM = nullptr;
 
@@ -809,6 +843,7 @@ string getString( const T* node ){
   return getString( node, SM ); 
 }
 
+#if 0
 void handleSCoP(  const MatchFinder::MatchResult &Result ){
 
   
@@ -868,60 +903,77 @@ void handleSCoP(  const MatchFinder::MatchResult &Result ){
   CLAN_debug_call(osl_scop_dump(stderr, scop));
 #endif
 }
+#endif
 
 auto to_char_str( string str ) {
   char* ret;
-  ret = (char*)malloc( str.length()+1 );
+  ret = (char*)malloc( sizeof(char)*(str.length()+1) );
+  printf("new char ptr %d\n", ret);
+  cout << "content: " << str << endl;
   strcpy( ret, str.c_str() );
+  cout << ret[0] << " " << ret[1] << " " << ret[2] << endl;
+  ret[str.length()] = '\0';
+  cout << "returing from " << __PRETTY_FUNCTION__ << endl;
   return ret;
 }
 
 auto handleInteger( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   int* ret = nullptr;
   if ( auto integer_literal = dyn_cast_or_null<IntegerLiteral>( expr ) ){
-    expr->dumpColor();
     char* text = to_char_str( getString( integer_literal ) );
+    cout << "integer literal number: " << text << endl;
     ret = (int*)malloc( sizeof( int ) );
     *ret = atoi( text );
+    cout << "integer literal number (cvted): " << ret << endl;
     free( text );
     return ret;
   } 
-  cerr << "not an integer literal" << endl;
+  logg << "not an integer literal" << endl;
   return ret;
 }
 
 // has to work with standard char pointers
 auto handleID( const Expr* expr ){
+  logg << __PRETTY_FUNCTION__ << endl;
+
   expr->dumpColor();
-  cerr << __PRETTY_FUNCTION__ << endl;
   char* ret = nullptr;
 
   // ignore implicit casts
   const Expr* iic_expr = expr->IgnoreImpCasts();
 
   if ( auto decl_ref_expr = dyn_cast_or_null<DeclRefExpr>( iic_expr ) ) {
+    logg << "leaving via decl_ref " << __PRETTY_FUNCTION__ << endl;
     ret = to_char_str( getString( decl_ref_expr ) );
     return ret; 
   }
   if ( auto call_expr = dyn_cast_or_null<CallExpr>( iic_expr ) ) {
+    logg << "leaving via call expr " << __PRETTY_FUNCTION__ << endl;
     ret = to_char_str( getString( call_expr ) );
     return ret; 
   }
+  logg << "leaving with nullptr" << __PRETTY_FUNCTION__ << endl;
+  return (char*)nullptr;
 }
 
 auto handleID( const NamedDecl* decl ){
+  logg << __PRETTY_FUNCTION__ << endl;
+  SourceManager& SM = *global_SM;
+
   decl->dumpColor();
-  cerr << __PRETTY_FUNCTION__ << endl;
   char* ret = nullptr;
   auto declaration_name = decl->getDeclName();
   auto name_str = declaration_name.getAsString();
   ret = to_char_str( name_str );
+  ///cout << "declaration_name (as char*)" << ret << " in " << SM.getSpellingLineNumber(decl->getLocStart()) << endl;
+  cout << "declaration_name (as char*)" << ret << endl;
+  logg << "leaving " << __PRETTY_FUNCTION__ << endl;
   return ret;
 }
 
 auto handleAffinePrimaryExpression( const Expr* expr ) {
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   osl_vector_p ret = nullptr;
 
   auto ID = handleID( expr );
@@ -933,6 +985,7 @@ auto handleAffinePrimaryExpression( const Expr* expr ) {
     // An id in an affex can be either an iterator or a parameter. If it is
     // an unknown (embeds read-only variables), it is updated to a parameter.
     if (id->type == CLAN_UNDEFINED) {
+      std::cout << "clan undefined" << std::endl;
       if ((parser_nb_parameters + 1) > CLAN_MAX_PARAMETERS)
 	      CLAN_error("CLAN_MAX_PARAMETERS reached,"
 			   "recompile with a higher value");
@@ -942,6 +995,7 @@ auto handleAffinePrimaryExpression( const Expr* expr ) {
 
     if ((id->type != CLAN_TYPE_ITERATOR) &&
 	(id->type != CLAN_TYPE_PARAMETER)) {
+      std::cout << "not an iterator or a parameter" << std::endl;
       free(id);
       if (id->type == CLAN_TYPE_ARRAY)
 	yyerror("variable or array reference in an affine expression");
@@ -958,7 +1012,7 @@ auto handleAffinePrimaryExpression( const Expr* expr ) {
 
   auto integer = handleInteger( expr );
   if ( integer ) {
-    expr->dumpColor();
+    //expr->dumpColor();
     CLAN_debug("rule affine_primary_expression.2: INTEGER");
     auto ret = clan_vector_term(parser_symbol, *integer, NULL, parser_options->precision);
     CLAN_debug_call(osl_vector_dump(stderr, ret));
@@ -972,18 +1026,18 @@ auto handleAffinePrimaryExpression( const Expr* expr ) {
   }
 #endif
 
-  cerr << "no ID nor a declRefExpr " << endl;
+  logg << "no ID nor a declRefExpr " << endl;
   return ret;
 
 }
 
 
 auto handleAffineUnaryExpression( const Expr* expr ) {
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_primary_expression = handleAffinePrimaryExpression( expr );
   if ( affine_primary_expression ) {
       CLAN_debug("rule affine_unary_expression.1: affine_primary_expression");
-      expr->dumpColor();
+      //expr->dumpColor();
       auto ret = affine_primary_expression;
       CLAN_debug_call(osl_vector_dump(stderr, ret));
       return ret;
@@ -1022,11 +1076,11 @@ auto handleAffineUnaryExpression( const Expr* expr ) {
 }
 
 auto handleAffineMultiplicativeExpression( const Expr* expr ) {
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_unary_expression = handleAffineUnaryExpression( expr );
   if ( affine_unary_expression ){
       CLAN_debug("rule affine_multiplicative_expression.1: affine_unary_expression");
-      expr->dumpColor();
+      //expr->dumpColor();
       auto ret = affine_unary_expression;
       CLAN_debug_call(osl_vector_dump(stderr, ret));
       return ret;
@@ -1098,19 +1152,19 @@ auto handleAffineMultiplicativeExpression( const Expr* expr ) {
 }
 
 auto handleAffineExpression( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_multiplicative_expression = handleAffineMultiplicativeExpression( expr );
 
   if ( affine_multiplicative_expression ) {
-    expr->dumpColor();
+    //expr->dumpColor();
     CLAN_debug("rule affine_expression.1: affine_multiplicative_expression");
     auto ret = affine_multiplicative_expression;
     CLAN_debug_call(osl_vector_dump(stderr, ret));
     return ret;
   }
 
-  cerr << "in " << __PRETTY_FUNCTION__ << endl;
-  expr->dumpColor();
+  logg << "in " << __PRETTY_FUNCTION__ << endl;
+  //expr->dumpColor();
 
   auto binary_operator = dyn_cast_or_null<BinaryOperator>(expr);
   if ( binary_operator ) {
@@ -1177,10 +1231,10 @@ auto handleCeildFloord( Expr* expr ) {
 }
 
 auto handleCeildFloordExpression( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_expression = handleAffineExpression( expr );
   if ( affine_expression ) {
-    expr->dumpColor();
+    //expr->dumpColor();
     CLAN_debug("affine_ceildloord_expression.1: affine_expression");
     auto ret = affine_expression;
     CLAN_debug_call(osl_vector_dump(stderr, ret));
@@ -1203,12 +1257,12 @@ auto handleCeildFloordExpression( const Expr* expr ){
 }
 
 osl_relation_p handleAffineMinMaxExpression( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
 
   // is either one of them
   auto affine_ceildfloord_expression = handleCeildFloordExpression( expr );
   if ( affine_ceildfloord_expression ){
-      expr->dumpColor();
+      //expr->dumpColor();
       CLAN_debug("rule affine_minmax_expression.1: <affex>");
       auto ret = osl_relation_from_vector(affine_ceildfloord_expression);
       osl_vector_free(affine_ceildfloord_expression);
@@ -1235,16 +1289,18 @@ osl_relation_p handleAffineMinMaxExpression( const Expr* expr ){
 }
 
 auto handleLoopDeclaration( const Stmt* stmt ) {
+  logg << __PRETTY_FUNCTION__ << endl;
   if ( auto decl_stmt = dyn_cast_or_null<DeclStmt>( stmt ) ){
     return decl_stmt;
   }
+  logg << "leaving " << __PRETTY_FUNCTION__ << endl;
 }
 
 auto handleLoopInitializersInitialization( const Expr * expr ) {
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_minmax_expression = handleAffineMinMaxExpression( expr );
   if ( affine_minmax_expression ){
-    expr->dumpColor();
+    //expr->dumpColor();
     CLAN_debug("rule initialization: ID = <setex>");
     parser_xfor_index++;
     //free($2);
@@ -1255,7 +1311,7 @@ auto handleLoopInitializersInitialization( const Expr * expr ) {
 }
 
 osl_relation_p handleLoopInitialization( const Stmt* stmt ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
 
   // initialized with a declaration
   if( auto loop_declaration = handleLoopDeclaration( stmt ) ){
@@ -1264,15 +1320,20 @@ osl_relation_p handleLoopInitialization( const Stmt* stmt ){
       auto ID = handleID( loop_declaration_1 );
 
       if ( ID ){
-	cerr << "added new symbol " << ID << endl;
+	logg << "added new symbol " << ID << endl;
+	logg << "parser_symbol " << parser_symbol << endl;
+	logg << "parser_iterators " << parser_iterators << endl;
+	logg << "parser_loop_depth " << parser_loop_depth << endl;
 	if (!clan_symbol_new_iterator(&parser_symbol, parser_iterators, ID, parser_loop_depth)){
 	    YYABORT;
 	}
       }
 
+      logg << "has init" <<endl;
       if ( loop_declaration_1->hasInit() ){
 	return handleLoopInitializersInitialization( loop_declaration_1->getInit() );	
       }
+      logg << "no it does not" << endl;
     }
   }
 
@@ -1282,19 +1343,21 @@ osl_relation_p handleLoopInitialization( const Stmt* stmt ){
     auto binary_operator = dyn_cast_or_null<BinaryOperator>( expr );
     if ( binary_operator ) {
       CLAN_debug("rule loop initialization.2: assign operation");
-      binary_operator->dumpColor();
+      //binary_operator->dumpColor();
       auto ID = handleID( binary_operator->getLHS() );
+      logg << "get string" << endl;
       auto opcode = binary_operator->getOpcodeStr();
+      logg << "done get string " << endl;
       if ( opcode == "=" ) {
 	if ( ID ) {
-	  cerr << "added new symbol " << ID << endl;
+	  logg << "added new symbol " << ID << endl;
 	  if (!clan_symbol_new_iterator(&parser_symbol, parser_iterators, ID, parser_loop_depth)){
 	      YYABORT;
 	  }
 	}
-	cerr << "rhs of the assign operator " << endl;
+	logg << "rhs of the assign operator " << endl;
 	binary_operator->getRHS()->dumpColor();
-	cerr << "done rhs of the assign operator " << endl;
+	logg << "done rhs of the assign operator " << endl;
 
 	return handleLoopInitializersInitialization( binary_operator->getRHS() );
       }
@@ -1305,13 +1368,13 @@ osl_relation_p handleLoopInitialization( const Stmt* stmt ){
 
 // TODO make it also handle multiple initializations
 osl_relation_list_p handleLoopInitializationList( const Stmt* stmt ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   osl_relation_list_p ret = nullptr;
 
   auto loop_initialization = handleLoopInitialization( stmt );
   if ( loop_initialization ){
     CLAN_debug("rule initialization_list.2: initialization ;");
-    stmt->dumpColor();
+    //stmt->dumpColor();
     parser_xfor_index = 0;
     ret = osl_relation_list_malloc();
     ret->elt = loop_initialization;
@@ -1353,10 +1416,10 @@ auto handleCEILD( const Expr* expr ){
 }
 
 auto handleAffineFloordExpression( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
-  cerr << "handleAffineFloordExpression calling handleAffineExpression" << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
+  logg << "handleAffineFloordExpression calling handleAffineExpression" << endl;
   auto affine_expression = handleAffineExpression( expr );
-  cerr << "handleAffineFloordExpressio ndone calling handleAffineExpression" << endl;
+  logg << "handleAffineFloordExpressio ndone calling handleAffineExpression" << endl;
   if ( affine_expression ) {
       CLAN_debug("affine_floor_expression.1: affine_expression");
       auto ret = affine_expression;
@@ -1378,10 +1441,10 @@ auto handleAffineFloordExpression( const Expr* expr ){
 }
 
 auto handleAffineCeildExpression( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
-  cerr << "handleAffineCeildExpression calling handleAffineExpression" << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
+  logg << "handleAffineCeildExpression calling handleAffineExpression" << endl;
   auto affine_expression = handleAffineExpression( expr );
-  cerr << "handleAffineCeildExpression done calling handleAffineExpression" << endl;
+  logg << "handleAffineCeildExpression done calling handleAffineExpression" << endl;
   if ( affine_expression ) {
     CLAN_debug("affine_ceil_expression.1: affine_expression");
     auto ret = affine_expression;
@@ -1403,7 +1466,7 @@ auto handleAffineCeildExpression( const Expr* expr ){
 }
 
 auto handleAffineMinExpression( const Expr* expr ) {
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_floord_expression = handleAffineFloordExpression( expr );
   
   if (affine_floord_expression){
@@ -1433,7 +1496,7 @@ auto handleAffineMinExpression( const Expr* expr ) {
 osl_relation_p handleAffineCondition( const Expr* expr );
 
 auto handleAffineMaxExpression( const Expr* expr ) {
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_ceild_expression = handleAffineCeildExpression( expr );
   
   if (affine_ceild_expression){
@@ -1461,7 +1524,7 @@ auto handleAffineMaxExpression( const Expr* expr ) {
 }
 
 auto handleAffineRelation( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
 
   enum STATES{
     IS_LESS,
@@ -1519,12 +1582,12 @@ auto handleAffineRelation( const Expr* expr ){
     // Operations like < <= > >=
 
     if ( state_array[IS_LESS] ) {
-        cerr << "operator is less " << endl;
-	cerr << "checking max expression" << endl;
+        logg << "operator is less " << endl;
+	logg << "checking max expression" << endl;
 	auto affine_max_expression = handleAffineMaxExpression( binary_operator->getLHS() );
 	auto affine_min_expression = handleAffineMinExpression( binary_operator->getRHS() );
 
-	cerr << affine_max_expression << " " << affine_min_expression << endl;
+	logg << affine_max_expression << " " << affine_min_expression << endl;
 	if ( affine_max_expression && affine_min_expression ) {
 	  CLAN_debug("rule affine_relation.1: max_affex < min_affex");
 	  auto ret = clan_relation_greater(affine_min_expression, affine_max_expression, 1);
@@ -1610,7 +1673,7 @@ auto handleAffineRelation( const Expr* expr ){
   //  }
   
   if ( unary_operator ) {
-    cerr << "unary operator part" << endl;
+    logg << "unary operator part" << endl;
     auto affine_condition = handleAffineCondition( unary_operator->getSubExpr() );
     if ( state_array[IS_NEGATION] && affine_condition ) {
       CLAN_debug("rule affine_relation.7: ! ( condition )");
@@ -1630,7 +1693,7 @@ auto handleAffineRelation( const Expr* expr ){
 }
 
 auto handleAffineLogicalAndExpression( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_relation = handleAffineRelation( expr );
   if ( affine_relation ) {
     CLAN_debug("rule affine_logical_and_expression.1: affine_relation");
@@ -1666,7 +1729,7 @@ auto handleAffineLogicalAndExpression( const Expr* expr ){
 
 
 osl_relation_p handleAffineCondition( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_logical_and_expression = handleAffineLogicalAndExpression( expr );
   if ( affine_logical_and_expression ) {
     CLAN_debug("rule affine_condition.1: affine_logical_and_expression");
@@ -1700,7 +1763,7 @@ osl_relation_p handleAffineCondition( const Expr* expr ){
 }
 
 auto handleLoopCondition( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   auto affine_condition = handleAffineCondition( expr );
 
   if ( affine_condition ) {
@@ -1715,7 +1778,7 @@ auto handleLoopCondition( const Expr* expr ){
 
 // TODO make it work with multiple conditions
 osl_relation_list_p handleLoopConditionList( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
 
   osl_relation_list_p ret = nullptr;
   auto loop_condition = handleLoopCondition( expr );
@@ -1820,7 +1883,7 @@ auto handleSelectionElseStatement( const Stmt* stmt ){
 
 
 auto handleSelectionStatement( const Stmt* stmt ){
-  cerr << __PRETTY_FUNCTION__ << std::endl;
+  logg << __PRETTY_FUNCTION__ << std::endl;
   if ( auto if_stmt = handleIfStatement( stmt ) ) {
 
     auto affine_condition = handleAffineCondition( if_stmt->getCond() );
@@ -1875,7 +1938,7 @@ auto handleFOR( const Stmt* stmt ){
 
 // TODO add infinit loops
 auto handleIterationStatement( const Stmt* stmt ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
 
   osl_statement_p ret = nullptr;
   auto FOR = handleFOR( stmt );
@@ -1933,7 +1996,7 @@ auto handleIterationStatement( const Stmt* stmt ){
 
 
 auto handleStatementList ( const Stmt* const* begin, const Stmt* const* end ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
 
   // case 1: just one statement;
   if ( std::distance( begin, end ) == 1 ){
@@ -1949,7 +2012,7 @@ auto handleStatementList ( const Stmt* const* begin, const Stmt* const* end ){
 }
 
 auto handleCompoundStatement( const Stmt* stmt ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   if ( auto compound_stmt = dyn_cast_or_null<CompoundStmt>( stmt ) ) {
     if ( compound_stmt->size() > 0 ) {
       auto ret = handleStatementList( compound_stmt->body_begin(), compound_stmt->body_end() );
@@ -1984,7 +2047,7 @@ auto handleAssignmentOperator( const Expr* expr ){
 }
 
 auto handlePrimaryExpression( const Expr* expr ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   osl_relation_list_p ret = nullptr;
   auto ID = handleID( expr );
   if ( ID ) {
@@ -2032,8 +2095,8 @@ auto handlePrimaryExpression( const Expr* expr ){
   // TODO STRING_LITERAL
   
   // TODO parenthesis expression
-  cerr << "was not recognized as something usefull" << endl;
-  expr->dumpColor();
+  logg << "was not recognized as something usefull" << endl;
+  //expr->dumpColor();
   return ret;
 }
 
@@ -2570,7 +2633,7 @@ osl_relation_list_p handleExpression( const Expr* expr ){
 }
 
 osl_statement_p handleExpressionStatement( const Stmt* stmt ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   osl_statement_p ret = nullptr;
 
   if (parser_options->extbody) {
@@ -2649,7 +2712,7 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt ){
 
 // TODO continue there is a lot more about statements
 osl_statement_p handleStatement( const Stmt* stmt ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
 
 #if 0
   auto labeled_statement = handleLabeledStatement( stmt );
@@ -2682,7 +2745,7 @@ osl_statement_p handleStatement( const Stmt* stmt ){
 }
 
 osl_statement_p handleLoopBody( const Stmt* stmt ){
-  cerr << __PRETTY_FUNCTION__ << endl;
+  logg << __PRETTY_FUNCTION__ << endl;
   osl_statement_p ret = nullptr;
   auto statement = handleStatement( stmt );
   if ( statement ) {
@@ -2702,31 +2765,44 @@ osl_statement_p handleLoopBody( const Stmt* stmt ){
   return ret;
 }
 
-void handleForLoop( const MatchFinder::MatchResult &Result, string filename ){
+osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, string filename ){
+//void handleForLoop( const MatchFinder::MatchResult &Result, string filename ){
 
   static bool once = true;
   if ( once ) {
-    clan_options_p options;
-    int argc = 2;
-    char* argv[argc] = { "clan", "non_exist.c" };
-    char **input_files = NULL;
-    FILE* output;
-    options = clan_options_read( argc, argv, &input_files, &output);
-    clan_parser_state_malloc(options->precision);
-    clan_parser_state_initialize(options);
-    ASTContext& context = *Result.Context;
-    global_SM = (SourceManager*)&context.getSourceManager();
+    // reopen stdout and stderr
+    std::freopen("/home/incubus/log/clan_redir_stdout.log", "w", stdout);
+    std::freopen("/home/incubus/log/clan_redir_stderr.log", "w", stderr);
+    // set buffering to Line buffering like on normal terminals 
+    setvbuf ( stdout , NULL , _IOLBF , 1024 );
+    setvbuf ( stderr , NULL , _IOLBF , 1024 );
+    global_SM = (SourceManager*)&SM;
     once = false;
+  }else{
+    return nullptr;
   }
 
-  cout << "got the hook into clan-clang" << __PRETTY_FUNCTION__ << endl;
+  clan_options_p options;
+  int argc = 2;
+  char* argv[argc] = { "clan", "non_exist.c" };
+  char **input_files = NULL;
+  FILE* output;
+  options = clan_options_read( argc, argv, &input_files, &output);
+  clan_parser_state_malloc(options->precision);
+  clan_parser_state_initialize(options);
 
+  logg << "got the hook into clan-clang " << __PRETTY_FUNCTION__ << endl;
 
-  const auto* for_loop = Result.Nodes.getNodeAs<ForStmt>(FOR_LOOP_ID);
+  cerr << "handleForLoop" << __LINE__ << endl;
+  for_loop->dumpColor();
+
+  logg << "is this an iteration statement" << endl;
+  //const auto* for_loop = Result.Nodes.getNodeAs<ForStmt>(FOR_LOOP_ID);
   auto iteration_statement = handleIterationStatement( for_loop ) ; 
+  logg << "lets test its" << endl;
 
   if ( iteration_statement ) {
-    cout << "hurray: found an iteration statement !!!!!!!!!!!!!!!" << endl;
+    logg << "hurray: found an iteration statement !!!!!!!!!!!!!!!" << endl;
     printf("building a scop\n");
     int nb_parameters;
     osl_scop_p scop;
@@ -2778,191 +2854,10 @@ void handleForLoop( const MatchFinder::MatchResult &Result, string filename ){
     FILE* output = fopen(filename.c_str(), "w");
     clan_scop_print(output, scop, parser_options);
     fclose( output );
+    logg << "returning a scop " << endl;
+    return scop;
   }
+  return nullptr;
 }
-
-// TODO make it ignore parens
-StatementMatcher makePrimaryExpressionMatcher(){
-  return anyOf(
-    integerLiteral(),
-    declRefExpr()
-  );
-}
-
-StatementMatcher makePostfixExpressionMatcher(){
-  return anyOf( 
-      makePrimaryExpressionMatcher(),
-      arraySubscriptExpr()
-  );
-}
-
-StatementMatcher makeUnaryIncrementOperatorMatcher(){
-  return anyOf( 
-      unaryOperator( hasOperatorName("++") ),
-      unaryOperator( hasOperatorName("--") )
-    );
-}
-
-StatementMatcher makeUnaryExpressionMatcher(){
-  return anyOf( 
-      makePostfixExpressionMatcher(),
-      makeUnaryIncrementOperatorMatcher()
-  );
-}
-
-StatementMatcher makeConditionalExpressionMatcher() {
-  return stmt();
-}
-
-StatementMatcher makeAssignmentExpressionMatcher(){
-  return anyOf( 
-      makeUnaryExpressionMatcher(),
-      makeConditionalExpressionMatcher()
-  );
-}
-
-StatementMatcher makeExpressionStatementMatcher(){
-  return makeAssignmentExpressionMatcher();
-}
-
-StatementMatcher inSingleLineCompoundStmt(StatementMatcher innerMatcher) {
-  return anyOf(
-	  compoundStmt(statementCountIs(1), hasAnySubstatement(innerMatcher)),
-	  innerMatcher
-  );
-}
-
-// TODO make it support more than one variable 
-StatementMatcher makeLoopInitializationMatcher(){
-  return inSingleLineCompoundStmt(
-      declStmt(
-	hasSingleDecl(
-	  varDecl(
-	    //hasName("int"), // TODO extend for all integer types
-	    hasInitializer(
-	      ignoringParenImpCasts(
-		integerLiteral().bind(LOOP_INITIALIZER_ID)
-		)
-	      )
-	    ).bind(LOOP_ITERATOR_ID)
-	  )
-	)
-      );
-}
-
-// TODO very complicated part with affine expressions ...
-StatementMatcher makeLoopConditionMatcher(){
-  return expr().bind(LOOP_CONDITION_LIST_ID);
-}
-
-StatementMatcher makeIncrementMatcher(){
-  return anyOf( 
-     unaryOperator( hasOperatorName("++") ).bind(INCREMENT_ONE_ID) ,
-     binaryOperator( 
-       hasOperatorName("+="),
-       hasRHS(
-	 integerLiteral(equals(1))
-       )
-     ).bind(INCREMENT_ONE_ID),
-     binaryOperator( 
-       hasOperatorName("="),
-       hasLHS( declRefExpr() ),
-       hasRHS( 
-	 binaryOperator( 
-	   hasOperatorName("+"),
-	   hasLHS( declRefExpr() )
-	   //hasRHS(  )
-	)
-      )
-     ).bind(INCREMENT_ONE_ID) 
-  );
-}
-
-StatementMatcher makeDecrementMatcher(){
-  return anyOf( 
-     unaryOperator( hasOperatorName("--") ).bind(DECREMENT_ONE_ID),
-     binaryOperator( 
-       hasOperatorName("-="),
-       hasRHS(
-	 integerLiteral(equals(1))
-       )
-     ).bind(DECREMENT_ONE_ID),
-     binaryOperator( 
-       hasOperatorName("="),
-       hasLHS( declRefExpr() ),
-       hasRHS( 
-	 binaryOperator( 
-	   hasOperatorName("-"),
-	   hasLHS( declRefExpr() )
-	   //hasRHS( anything() )
-	)
-      )
-     ).bind(DECREMENT_ONE_ID) 
-  );
-}
-
-StatementMatcher makeLoopStrideMatcher(){
-  return anyOf( 
-     makeIncrementMatcher(),
-     makeDecrementMatcher()
-  );
-}
-
-StatementMatcher makeIterationStmtMatcher(){
-  return forStmt( 
-#if 0
-      hasLoopInit(
-	makeLoopInitializationMatcher()
-      ),
-#endif
-      hasCondition(
-	makeLoopConditionMatcher()
-      ),
-#if 1
-      hasIncrement(
-	makeLoopStrideMatcher()
-      ),
-      unless(
-	hasAncestor(
-	  forStmt()
-	)
-      )
-#endif
-  ).bind(FOR_LOOP_ID); 
-}
-
-StatementMatcher makeStatementMatcher() {
-  return anyOf( 
-      compoundStmt(),
-      ifStmt(),
-      //makeIterationStmtMatcher(),
-      makeExpressionStatementMatcher()
-  );
-}
-
-// TODO make it match multiple statements
-StatementMatcher makeStatementListMatcher(){
-  return makeStatementMatcher();
-}
-
-StatementMatcher makeSCoPMatcher(){
-  return makeStatementListMatcher();  
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
