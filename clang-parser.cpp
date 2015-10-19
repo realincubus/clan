@@ -2766,7 +2766,6 @@ osl_statement_p handleLoopBody( const Stmt* stmt ){
 }
 
 osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, string filename ){
-//void handleForLoop( const MatchFinder::MatchResult &Result, string filename ){
 
   static bool once = true;
   if ( once ) {
@@ -2776,12 +2775,10 @@ osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, stri
     // set buffering to Line buffering like on normal terminals 
     setvbuf ( stdout , NULL , _IOLBF , 1024 );
     setvbuf ( stderr , NULL , _IOLBF , 1024 );
-    global_SM = (SourceManager*)&SM;
     once = false;
-  }else{
-    return nullptr;
   }
 
+  global_SM = (SourceManager*)&SM;
   clan_options_p options;
   int argc = 2;
   char* argv[argc] = { "clan", "non_exist.c" };
