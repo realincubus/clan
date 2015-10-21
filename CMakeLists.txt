@@ -181,7 +181,7 @@ set(OSL_LIBRARY osl)
 
 	add_libraries( clan-clang "${sources}" "clang-parser.cpp" ${FLEX_clan_scanner_OUTPUTS} )
 
-	target_link_libraries(clan-clang )
+	target_link_libraries(clan-clang clangAST)
 
 # Executables & tests
 
