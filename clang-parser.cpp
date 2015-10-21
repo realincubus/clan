@@ -1882,6 +1882,7 @@ auto handleSelectionElseStatement( const Stmt* stmt ){
 }
 
 
+// TODO something is definitly wrong here
 auto handleSelectionStatement( const Stmt* stmt ){
   logg << __PRETTY_FUNCTION__ << std::endl;
   if ( auto if_stmt = handleIfStatement( stmt ) ) {
@@ -1896,36 +1897,37 @@ auto handleSelectionStatement( const Stmt* stmt ){
       if ((parser_loop_depth + parser_if_depth) > CLAN_MAX_DEPTH)
 	CLAN_error("CLAN_MAX_DEPTH reached, recompile with a higher value");
 
-      auto statement = handleStatement( if_stmt->getThen() );
-      osl_relation_p not_if;
-      
-      CLAN_debug("rule selection_statement.1.2: if ( condition ) <stmt> ...");
-      clan_domain_drop(&parser_stack);
-      clan_domain_dup(&parser_stack);
-      if (!clan_relation_existential(affine_condition)) {
-	not_if = clan_relation_not(affine_condition);
-	clan_domain_and(parser_stack, not_if);
-	osl_relation_free(not_if);
-	parser_valid_else[parser_if_depth] = 1;
-      } else {
-	parser_valid_else[parser_if_depth] = 0;
+      if( auto statement = handleStatement( if_stmt->getThen() ) ){
+	osl_relation_p not_if;
+	
+	CLAN_debug("rule selection_statement.1.2: if ( condition ) <stmt> ...");
+	clan_domain_drop(&parser_stack);
+	clan_domain_dup(&parser_stack);
+	if (!clan_relation_existential(affine_condition)) {
+	  not_if = clan_relation_not(affine_condition);
+	  clan_domain_and(parser_stack, not_if);
+	  osl_relation_free(not_if);
+	  parser_valid_else[parser_if_depth] = 1;
+	} else {
+	  parser_valid_else[parser_if_depth] = 0;
+	}
+	osl_relation_free(affine_condition);
+
+	if ( auto selection_else_statement = handleSelectionElseStatement( if_stmt->getElse() ) ) {
+	  CLAN_debug("rule selection_statement.1.3: if ( condition ) <stmt>"
+		     "[else <stmt>]");
+	  clan_domain_drop(&parser_stack);
+	  auto ret = statement;
+	  osl_statement_add(&ret, selection_else_statement);
+	  parser_if_depth--;
+	  parser_nb_local_dims[parser_loop_depth + parser_if_depth] = 0;
+	  CLAN_debug_call(osl_statement_dump(stderr, ret));
+	  return ret;
+	}
       }
-      osl_relation_free(affine_condition);
-
-      auto selection_else_statement = handleSelectionElseStatement( if_stmt->getElse() );
-      // TODO i dont understand whats returned it the if has no else branch there is no return statement or something like this
-      CLAN_debug("rule selection_statement.1.3: if ( condition ) <stmt>"
-	         "[else <stmt>]");
-      clan_domain_drop(&parser_stack);
-      auto ret = statement;
-      osl_statement_add(&ret, selection_else_statement);
-      parser_if_depth--;
-      parser_nb_local_dims[parser_loop_depth + parser_if_depth] = 0;
-      CLAN_debug_call(osl_statement_dump(stderr, ret));
-      return ret;
     }
-
   }
+  return (osl_statement_p)nullptr;
 }
 
 osl_statement_p handleLoopBody( const Stmt* stmt );
@@ -2741,6 +2743,8 @@ osl_statement_p handleStatement( const Stmt* stmt ){
     return expression_statement;
   }
 
+  // TODO if it can not handle the statement. 
+  // throw an exception or some how emit an error message 
   return (osl_statement_p)nullptr;
 }
 
