@@ -1253,7 +1253,10 @@ primary_expression:
   | CONSTANT
     { $$ = NULL; }
   | INTEGER
-    { $$ = NULL; }
+    { 
+      CLAN_debug("rule primary_expression.2: integer");
+      $$ = NULL; 
+    }
   | STRING_LITERAL
     { $$ = NULL; }
   | '(' expression ')'

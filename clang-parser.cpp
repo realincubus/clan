@@ -426,6 +426,23 @@ void clan_parser_state_print(FILE* file) {
 }
 #endif
 
+// needed to find out whether a match was successful even if it returns null
+struct match_wrapper {
+  osl_relation_list_p result;
+};
+
+typedef match_wrapper* match_wrapper_p;
+
+match_wrapper* match_successful( osl_relation_list_p _result ){
+  match_wrapper* ret = (match_wrapper*)malloc(sizeof(match_wrapper));
+  ret->result = _result;
+  return ret;
+}
+
+match_wrapper* match_fail(){
+  return nullptr;
+}
+
 
 void clan_parser_add_ld() {
   parser_nb_local_dims[parser_loop_depth + parser_if_depth]++;
@@ -909,7 +926,12 @@ std::vector<std::pair<SourceRange, std::string>>* global_messages;
 
 template <typename T>
 void emit_message( const T * node, std::string message ){
-  global_messages->push_back( make_pair ( SourceRange( node->getLocStart(), node->getLocEnd() ) , message ) );
+  global_messages->push_back( make_pair ( SourceRange( node->getLocStart(), node->getLocEnd() ), std::string("CLAN_CLANG: ") + message ) );
+}
+
+template <typename T>
+void emit_debug_message( const T * node, std::string message ){
+  emit_message( node, std::string(" DEBUG: ") + message );
 }
 
 auto to_char_str( string str ) {
@@ -927,7 +949,8 @@ auto to_char_str( string str ) {
 auto handleInteger( const Expr* expr ){
   logg << __PRETTY_FUNCTION__ << endl;
   int* ret = nullptr;
-  if ( auto integer_literal = dyn_cast_or_null<IntegerLiteral>( expr ) ){
+  auto ignore_paren_impl_casts = expr->IgnoreParenImpCasts();
+  if ( auto integer_literal = dyn_cast_or_null<IntegerLiteral>( ignore_paren_impl_casts ) ){
     char* text = to_char_str( getString( integer_literal ) );
     cout << "integer literal number: " << text << endl;
     ret = (int*)malloc( sizeof( int ) );
@@ -948,7 +971,7 @@ auto handleID( const Expr* expr ){
   char* ret = nullptr;
 
   // ignore implicit casts
-  const Expr* iic_expr = expr->IgnoreImpCasts();
+  const Expr* iic_expr = expr->IgnoreParenImpCasts();
 
   if ( auto decl_ref_expr = dyn_cast_or_null<DeclRefExpr>( iic_expr ) ) {
     logg << "leaving via decl_ref " << __PRETTY_FUNCTION__ << endl;
@@ -2050,9 +2073,11 @@ auto handleAssignmentOperator( const Expr* expr ){
   return 0;
 }
 
+// TODO this is actually not wrong. the content from the integer or other things is simply a nullptr 
+// i have no idea why
 auto handlePrimaryExpression( const Expr* expr ){
   logg << __PRETTY_FUNCTION__ << endl;
-  osl_relation_list_p ret = nullptr;
+  match_wrapper* ret = nullptr;
   auto ID = handleID( expr );
   if ( ID ) {
     int nb_columns;
@@ -2085,26 +2110,23 @@ auto handlePrimaryExpression( const Expr* expr ){
     }
 
     free(ID);
-    ret = list;
-    CLAN_debug_call(osl_relation_list_dump(stderr, ret));
-    return list;
+    ret = match_successful(list);
+    CLAN_debug_call(osl_relation_list_dump(stderr, ret->result));
+    return ret;
   }
   // TODO i think all of this can be removed
   auto integer = handleInteger( expr );
   if ( integer ) {
-    return (osl_relation_list_p)nullptr;
+    return match_successful(nullptr);
   }
   // TODO CONSTANT
   
   // TODO STRING_LITERAL
-  
-  // TODO parenthesis expression
   logg << "was not recognized as something usefull" << endl;
-  //expr->dumpColor();
-  return ret;
+  return match_fail();
 }
 
-osl_relation_list_p handleAssignmentExpression( const Expr* expr );
+match_wrapper_p handleAssignmentExpression( const Expr* expr );
 
 auto handleArgumentExpressionList( const Expr* const* expressions, int n_expressions ){
   if ( n_expressions == 1 ) {
@@ -2117,7 +2139,7 @@ auto handleArgumentExpressionList( const Expr* const* expressions, int n_express
   auto assignment_expression = handleAssignmentExpression( expressions[n_expressions-1] );
   if ( argument_expression_list && assignment_expression ) {
     auto ret = argument_expression_list;
-    osl_relation_list_add(&ret, assignment_expression);
+    osl_relation_list_add(&ret->result, assignment_expression->result);
     return ret;
   }
 }
@@ -2142,13 +2164,13 @@ auto handlePostfixExpression( const Expr* expr ){
         parser_access_length = strlen(parser_record) - parser_access_start;
 
       CLAN_debug("rule postfix_expression.2: postfix_expression [ <affex> ]");
-      if (!clan_symbol_update_type(parser_symbol, postfix_expression, CLAN_TYPE_ARRAY)){
+      if (!clan_symbol_update_type(parser_symbol, postfix_expression->result, CLAN_TYPE_ARRAY)){
         YYABORT;
       }
-      clan_relation_new_output_vector(postfix_expression->elt, affine_expression);
+      clan_relation_new_output_vector(postfix_expression->result->elt, affine_expression);
       osl_vector_free(affine_expression);
       auto ret = postfix_expression;
-      CLAN_debug_call(osl_relation_list_dump(stderr, ret));
+      CLAN_debug_call(osl_relation_list_dump(stderr, ret->result));
       return ret;
     }
   }
@@ -2163,20 +2185,20 @@ auto handlePostfixExpression( const Expr* expr ){
     if ( postfix_expression ){
       // don't save access name of a function
       if (parser_options->extbody) {
-	parser_access_extbody->nb_access -= osl_relation_list_count(postfix_expression) - 1;
+	parser_access_extbody->nb_access -= osl_relation_list_count(postfix_expression->result) - 1;
 	parser_access_start = -1;
       }
 
-      if (!clan_symbol_update_type(parser_symbol, postfix_expression, CLAN_TYPE_FUNCTION))
+      if (!clan_symbol_update_type(parser_symbol, postfix_expression->result, CLAN_TYPE_FUNCTION))
 	YYABORT;
-      osl_relation_list_free(postfix_expression);
+      osl_relation_list_free(postfix_expression->result);
 
       auto argument_expression_list = handleArgumentExpressionList( function_call->getArgs(), function_call->getNumArgs() );
       if ( argument_expression_list ) {
 	return argument_expression_list;
       }
 
-      auto ret = (osl_relation_list_p)nullptr;
+      auto ret = match_fail();
       return ret;
     }
   }
@@ -2218,9 +2240,9 @@ auto handlePostfixExpression( const Expr* expr ){
 
       CLAN_debug("rule postfix_expression.6: postfix_expression -> "
 	         "postfix_expression ++/--");
-      if (!clan_symbol_update_type(parser_symbol, postfix_expression, CLAN_TYPE_ARRAY))
+      if (!clan_symbol_update_type(parser_symbol, postfix_expression->result, CLAN_TYPE_ARRAY))
         YYABORT;
-      list = postfix_expression;
+      list = postfix_expression->result;
       // The last reference in the list is also written.
       if (list != NULL) {
         while (list->next != NULL)
@@ -2229,7 +2251,7 @@ auto handlePostfixExpression( const Expr* expr ){
         list->next->elt->type = OSL_TYPE_WRITE;
       }
       auto ret = postfix_expression;
-      CLAN_debug_call(osl_relation_list_dump(stderr, ret));
+      CLAN_debug_call(osl_relation_list_dump(stderr, ret->result));
 
       // add an empty line in the extbody
       if (parser_options->extbody) {
@@ -2238,10 +2260,10 @@ auto handlePostfixExpression( const Expr* expr ){
       return ret;
     }
   }
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
-osl_relation_list_p handleCastExpression( const Expr* expr );
+match_wrapper_p handleCastExpression( const Expr* expr );
 
 auto handleUnaryExpression( const Expr* expr ){
   auto postfix_expression = handlePostfixExpression( expr );
@@ -2254,13 +2276,12 @@ auto handleUnaryExpression( const Expr* expr ){
     auto opcode = unary_operator->getOpcodeStr( unary_operator->getOpcode() );
     if ( opcode == "++" && unary_operator->isPrefix() ) {
       auto unary_expression = handleUnaryExpression( unary_operator->getSubExpr() );
-      osl_relation_list_p list;
 
       CLAN_debug("rule unary_expression.2: unary_expression -> "
 	         "++/-- unary_expression");
-      if (!clan_symbol_update_type(parser_symbol, unary_expression, CLAN_TYPE_ARRAY))
+      if (!clan_symbol_update_type(parser_symbol, unary_expression->result, CLAN_TYPE_ARRAY))
         YYABORT;
-      list = unary_expression;
+      auto list = unary_expression->result;
       // The last reference in the list is also written.
       if (list != NULL) {
         while (list->next != NULL)
@@ -2269,7 +2290,7 @@ auto handleUnaryExpression( const Expr* expr ){
         list->next->elt->type = OSL_TYPE_WRITE;
       }
       auto ret = unary_expression;
-      CLAN_debug_call(osl_relation_list_dump(stderr, ret));
+      CLAN_debug_call(osl_relation_list_dump(stderr, ret->result));
 
       // add an empty line in the extbody
       if (parser_options->extbody) {
@@ -2292,11 +2313,11 @@ auto handleUnaryExpression( const Expr* expr ){
     assert( 0 && "add the check whether this is really a sizeof_expression" );
     return handleUnaryExpression( sizeof_expression->getArgumentExpr() );
   }
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 
 }
 
-osl_relation_list_p handleCastExpression( const Expr* expr ){
+match_wrapper_p handleCastExpression( const Expr* expr ){
   auto unary_expression = handleUnaryExpression( expr );
   if ( unary_expression ) {
     return unary_expression;
@@ -2309,7 +2330,7 @@ osl_relation_list_p handleCastExpression( const Expr* expr ){
       return cast_expression_subexpr;
     }
   }
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 
 }
 
@@ -2328,13 +2349,13 @@ auto handleMultiplicativeExpression( const Expr* expr ){
 
       if ( multiplicative_expression && cast_expression ) {
 	auto ret = multiplicative_expression;
-	osl_relation_list_add(&ret, cast_expression);
+	osl_relation_list_add(&ret->result, cast_expression->result);
 	return ret;
       }
     }
   }
  
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 auto handleAdditiveExpression( const Expr* expr ){
@@ -2352,13 +2373,13 @@ auto handleAdditiveExpression( const Expr* expr ){
 
       if ( additive_expression && multiplicative_expression ) {
 	auto ret = additive_expression;
-	osl_relation_list_add(&ret, multiplicative_expression);
+	osl_relation_list_add(&ret->result, multiplicative_expression->result);
 	return ret;
       }
     }
   }
  
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 auto handleShiftExpression( const Expr* expr ){
@@ -2376,14 +2397,14 @@ auto handleShiftExpression( const Expr* expr ){
 
       if ( shift_expression && additive_expression ) {
 	auto ret = shift_expression;
-	osl_relation_list_add(&ret, additive_expression);
+	osl_relation_list_add(&ret->result, additive_expression->result);
 	return ret;
       }
     }
   }
 
 
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 auto handleRelationalExpression( const Expr* expr ){
@@ -2401,13 +2422,13 @@ auto handleRelationalExpression( const Expr* expr ){
 
       if ( relational_expression && shift_expression ) {
 	auto ret = relational_expression;
-	osl_relation_list_add(&ret, shift_expression);
+	osl_relation_list_add(&ret->result, shift_expression->result);
 	return ret;
       }
     }
   }
   
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 auto handleEqualityExpression( const Expr* expr ){
@@ -2425,14 +2446,14 @@ auto handleEqualityExpression( const Expr* expr ){
 
       if ( equality_expression && relational_expression ) {
 	auto ret = equality_expression;
-	osl_relation_list_add(&ret, relational_expression);
+	osl_relation_list_add(&ret->result, relational_expression->result);
 	return ret;
       }
     }
   }
   
 
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 auto handleAndExpression( const Expr* expr ){
@@ -2450,13 +2471,13 @@ auto handleAndExpression( const Expr* expr ){
 
       if ( and_expression && equality_expression ) {
 	auto ret = and_expression;
-	osl_relation_list_add(&ret, equality_expression);
+	osl_relation_list_add(&ret->result, equality_expression->result);
 	return ret;
       }
     }
   }
   
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 auto handleExclusiveOrExpression( const Expr* expr ){
@@ -2473,13 +2494,13 @@ auto handleExclusiveOrExpression( const Expr* expr ){
 
       if ( exclusive_or_expression && and_expression ) {
 	auto ret = exclusive_or_expression;
-	osl_relation_list_add(&ret, and_expression);
+	osl_relation_list_add(&ret->result, and_expression->result);
 	return ret;
       }
     }
   }
   
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 auto handleInclusiveOrExpression( const Expr* expr ){
@@ -2497,12 +2518,12 @@ auto handleInclusiveOrExpression( const Expr* expr ){
 
       if ( inclusive_or_expression && exclusive_or_expression ) {
 	auto ret = inclusive_or_expression;
-	osl_relation_list_add(&ret, exclusive_or_expression);
+	osl_relation_list_add(&ret->result, exclusive_or_expression->result);
 	return ret;
       }
     }
   }
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 auto handleLogicalAndExpression( const Expr* expr ){
@@ -2519,13 +2540,13 @@ auto handleLogicalAndExpression( const Expr* expr ){
       auto inclusive_or_expression = handleInclusiveOrExpression( binary_operator->getRHS() );
       if ( logical_and_expression && inclusive_or_expression ) {
 	auto ret = logical_and_expression;
-	osl_relation_list_add(&ret, inclusive_or_expression);
+	osl_relation_list_add(&ret->result, inclusive_or_expression->result);
 	return ret;
       }
     }
   }
   
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 auto handleLogicalOrExpression( const Expr* expr ){
@@ -2542,17 +2563,17 @@ auto handleLogicalOrExpression( const Expr* expr ){
       auto logical_and_expression = handleLogicalAndExpression( binary_operator->getRHS() );
       if ( logical_or_expression && logical_and_expression ) {
 	auto ret = logical_or_expression;
-	osl_relation_list_add(&ret, logical_and_expression);
+	osl_relation_list_add(&ret->result, logical_and_expression->result);
 	return ret;
       }
     }
   }
 
 
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
-osl_relation_list_p handleExpression( const Expr* expr );
+match_wrapper_p handleExpression( const Expr* expr );
 
 auto handleConditionalExpression( const Expr* expr ){
   auto logical_or_expression = handleLogicalOrExpression( expr );
@@ -2571,22 +2592,26 @@ auto handleConditionalExpression( const Expr* expr ){
 
     if ( logical_or_expression && expression && conditional_expression ) {
       auto ret = logical_or_expression;
-      osl_relation_list_add(&ret, expression);
-      osl_relation_list_add(&ret, conditional_expression);
+      osl_relation_list_add(&ret->result, expression->result);
+      osl_relation_list_add(&ret->result, conditional_expression->result);
       return ret;
     }
   }
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 
-osl_relation_list_p handleAssignmentExpression( const Expr* expr ){
+// TODO i believe the problem is that the return value of some of these functions can be nullptr 
+// eaven if it matches the expression
+// since my assumption was that a match should return something except nullptr 
+// nothing works anymore
+match_wrapper_p handleAssignmentExpression( const Expr* expr ){
   auto conditional_expression = handleConditionalExpression( expr );
   if ( conditional_expression ){
     CLAN_debug("rule assignment_expression.1: conditional_expression;");
     auto ret = conditional_expression;
-    clan_relation_list_define_type(ret, OSL_TYPE_READ);
-    CLAN_debug_call(osl_relation_list_dump(stderr, ret));
+    clan_relation_list_define_type(ret->result, OSL_TYPE_READ);
+    CLAN_debug_call(osl_relation_list_dump(stderr, ret->result));
     return ret;
   }
   
@@ -2594,18 +2619,21 @@ osl_relation_list_p handleAssignmentExpression( const Expr* expr ){
   if ( assignment_operator ) {
     auto binary_operator = dyn_cast_or_null<BinaryOperator>( expr );
     auto unary_expression = handleUnaryExpression( binary_operator->getLHS() );
+    if ( unary_expression ) emit_debug_message( binary_operator->getLHS(), "is a unary expression" );
+
     auto assignment_expression = handleAssignmentExpression( binary_operator->getRHS() );
+    if ( assignment_expression ) emit_debug_message( binary_operator->getRHS(), "is a assignment expression" );
+
     if ( unary_expression && assignment_expression ) {
-      osl_relation_list_p list;
 
       CLAN_debug("rule assignment_expression.2: unary_expression "
 	         "assignment_operator assignment_expression;");
-      if (!clan_symbol_update_type(parser_symbol, unary_expression, CLAN_TYPE_ARRAY))
+      if (!clan_symbol_update_type(parser_symbol, unary_expression->result, CLAN_TYPE_ARRAY))
         YYABORT;
       auto ret = unary_expression;
       // Accesses of $1 are READ except the last one which is a WRITE or both.
-      clan_relation_list_define_type(ret, OSL_TYPE_READ);
-      list = ret;
+      clan_relation_list_define_type(ret->result, OSL_TYPE_READ);
+      auto list = ret->result;
       while (list->next != NULL)
         list = list->next;
       if (assignment_operator == CLAN_TYPE_RDWR) {
@@ -2618,22 +2646,22 @@ osl_relation_list_p handleAssignmentExpression( const Expr* expr ){
         }
       }
       osl_relation_set_type(list->elt, OSL_TYPE_WRITE);
-      osl_relation_list_add(&ret, assignment_expression);
-      CLAN_debug_call(osl_relation_list_dump(stderr, ret));
+      osl_relation_list_add(&ret->result, assignment_expression->result);
+      CLAN_debug_call(osl_relation_list_dump(stderr, ret->result));
       return ret;
     }
   }
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
-osl_relation_list_p handleExpression( const Expr* expr ){
+match_wrapper_p handleExpression( const Expr* expr ){
   auto assignment_expression = handleAssignmentExpression( expr );
   if ( assignment_expression ) {
     return assignment_expression;
   }
 
   // TODO handle expression , assign 
-  return (osl_relation_list_p)nullptr;
+  return match_fail();
 }
 
 osl_statement_p handleExpressionStatement( const Stmt* stmt ){
@@ -2678,7 +2706,7 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt ){
 	  parser_loop_depth, parser_options->precision);
 
       // - 3. Array accesses
-      statement->access = expression;
+      statement->access = expression->result;
 
       // - 4. Body.
       body = osl_body_malloc();
