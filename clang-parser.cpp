@@ -2619,10 +2619,7 @@ match_wrapper_p handleAssignmentExpression( const Expr* expr ){
   if ( assignment_operator ) {
     auto binary_operator = dyn_cast_or_null<BinaryOperator>( expr );
     auto unary_expression = handleUnaryExpression( binary_operator->getLHS() );
-    if ( unary_expression ) emit_debug_message( binary_operator->getLHS(), "is a unary expression" );
-
     auto assignment_expression = handleAssignmentExpression( binary_operator->getRHS() );
-    if ( assignment_expression ) emit_debug_message( binary_operator->getRHS(), "is a assignment expression" );
 
     if ( unary_expression && assignment_expression ) {
 
