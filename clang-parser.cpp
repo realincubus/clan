@@ -905,6 +905,13 @@ void handleSCoP(  const MatchFinder::MatchResult &Result ){
 }
 #endif
 
+std::vector<std::pair<SourceRange, std::string>>* global_messages;
+
+template <typename T>
+void emit_message( const T * node, std::string message ){
+  global_messages->push_back( make_pair ( SourceRange( node->getLocStart(), node->getLocEnd() ) , message ) );
+}
+
 auto to_char_str( string str ) {
   char* ret;
   ret = (char*)malloc( sizeof(char)*(str.length()+1) );
@@ -959,14 +966,11 @@ auto handleID( const Expr* expr ){
 
 auto handleID( const NamedDecl* decl ){
   logg << __PRETTY_FUNCTION__ << endl;
-  SourceManager& SM = *global_SM;
-
   decl->dumpColor();
   char* ret = nullptr;
   auto declaration_name = decl->getDeclName();
   auto name_str = declaration_name.getAsString();
   ret = to_char_str( name_str );
-  ///cout << "declaration_name (as char*)" << ret << " in " << SM.getSpellingLineNumber(decl->getLocStart()) << endl;
   cout << "declaration_name (as char*)" << ret << endl;
   logg << "leaving " << __PRETTY_FUNCTION__ << endl;
   return ret;
@@ -1882,13 +1886,11 @@ auto handleSelectionElseStatement( const Stmt* stmt ){
 }
 
 
-// TODO something is definitly wrong here
+// TODO why does it just work for if statements with an else branch ?
 auto handleSelectionStatement( const Stmt* stmt ){
   logg << __PRETTY_FUNCTION__ << std::endl;
   if ( auto if_stmt = handleIfStatement( stmt ) ) {
-
     auto affine_condition = handleAffineCondition( if_stmt->getCond() );
-
     if ( affine_condition ) {
       CLAN_debug("rule selection_statement.1.1: if ( condition ) ...");
       clan_domain_dup(&parser_stack);
@@ -2643,6 +2645,8 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt ){
     parser_access_extbody = osl_extbody_malloc();
   }
 
+  // This is where the statements string is recorded into the openscop structure
+  // TODO in addition to the osl statement store the pointer to the ast node 
   auto statement_str = getString( stmt );
   statement_str += ";";
   CLAN_strdup(parser_record, statement_str.c_str());
@@ -2743,6 +2747,7 @@ osl_statement_p handleStatement( const Stmt* stmt ){
     return expression_statement;
   }
 
+  emit_message( stmt, "could not understand this statement" );
   // TODO if it can not handle the statement. 
   // throw an exception or some how emit an error message 
   return (osl_statement_p)nullptr;
@@ -2769,7 +2774,7 @@ osl_statement_p handleLoopBody( const Stmt* stmt ){
   return ret;
 }
 
-osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, string filename ){
+osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, string filename, std::vector<std::pair<SourceRange,std::string>>& messages ){
 
   static bool once = true;
   if ( once ) {
@@ -2783,6 +2788,7 @@ osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, stri
   }
 
   global_SM = (SourceManager*)&SM;
+  global_messages = &messages;
   clan_options_p options;
   int argc = 2;
   char* argv[argc] = { "clan", "non_exist.c" };
