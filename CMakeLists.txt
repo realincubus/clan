@@ -114,39 +114,39 @@ set(OSL_LIBRARY osl)
 # Library
 
 	function ( add_libraries libname sources bison_files flex_files )
-	message(STATUS "---")
+	  message(STATUS "---")
 
 
-	# Shared
-	add_library(
-		${libname}
-		SHARED
-		${sources}
-		${bison_files}
-		${flex_files}
-		${backward_ENABLE}
-	)
+	  # Shared
+	  add_library(
+		  ${libname}
+		  SHARED
+		  ${sources}
+		  ${bison_files}
+		  ${flex_files}
+		  ${backward_ENABLE}
+	  )
 
-      #add_backward( ${libname} )
-	target_link_libraries(${libname} ${OSL_LIBRARY})
-	get_property(clan_lib_location TARGET ${libname} PROPERTY LOCATION)
-	message(STATUS "Add ${libname} library (shared) ${clan_lib_location}")
+	#add_backward( ${libname} )
+	  target_link_libraries(${libname} ${OSL_LIBRARY})
+	  get_property(clan_lib_location TARGET ${libname} PROPERTY LOCATION)
+	  message(STATUS "Add ${libname} library (shared) ${clan_lib_location}")
 
-	# Static
-	add_library(
-		${libname}_static
-		STATIC
-		${sources}
-		${bison_files}
-		${flex_files}
-		${backward_ENABLE}
-	)
+	  # Static
+	  add_library(
+		  ${libname}_static
+		  STATIC
+		  ${sources}
+		  ${bison_files}
+		  ${flex_files}
+		  ${backward_ENABLE}
+	  )
 
-      #add_backward( ${libname}_static )
-	set_target_properties(${libname}_static PROPERTIES OUTPUT_NAME ${libname})
-	target_link_libraries(${libname}_static ${OSL_LIBRARY})
-	get_property(clan_static_lib_location TARGET ${libname}_static PROPERTY LOCATION)
-	message(STATUS "Add ${libname} library (static) ${clan_static_lib_location}")
+	#add_backward( ${libname}_static )
+	  set_target_properties(${libname}_static PROPERTIES OUTPUT_NAME ${libname})
+	  target_link_libraries(${libname}_static ${OSL_LIBRARY})
+	  get_property(clan_static_lib_location TARGET ${libname}_static PROPERTY LOCATION)
+	  message(STATUS "Add ${libname} library (static) ${clan_static_lib_location}")
 	endfunction( add_libraries )
 
 
