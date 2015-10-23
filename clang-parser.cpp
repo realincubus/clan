@@ -831,26 +831,111 @@ const char* FLOORD_ID = "floord";
 template <typename T>
 inline std::string getString(const T *node, const SourceManager &SM) {
   cout << __PRETTY_FUNCTION__ << endl;
-  cout << "node ptr " << node << endl;
   SourceLocation expr_start = node->getLocStart();
   SourceLocation expr_end = node->getLocEnd();
-  cout << "got locations" << endl;
-  cout << "start line number: " << SM.getSpellingLineNumber( expr_start ) << endl;
   auto ret = Lexer::getSourceText(
       CharSourceRange::getTokenRange(SourceRange(expr_start, expr_end)), SM,
       LangOptions());
-  cout << "lexed text: " << string(ret) << endl;;
   return ret;
 }
 
-#if 0
-template <typename T>
-string getString( const T* node, const MatchFinder::MatchResult &Result ){
-  ASTContext& context = *Result.Context;
-  SourceManager& SM = context.getSourceManager();
-  return getString( node, SM ); 
+const Stmt* get_predecessor( const CompoundStmt* c, const Stmt* stmt ){
+  cout << __PRETTY_FUNCTION__ << endl;
+  c->dumpColor();
+  cerr << "------------" << endl;
+  stmt->dumpColor();
+  for( auto I = c->body_begin(), E = c->body_end(); I != E ; I++ ){
+    // search yourself
+    if ( *I == stmt ){
+      std::cout << "found myself" << std::endl;
+      // dont work with begin statements
+      if ( I == c->body_begin() ) return nullptr;
+      // get the predecessor 
+      decltype(I) prev = I - 1;
+      // otherwise
+      std::cout << "returning something" << std::endl;
+      return *prev;
+    }
+  }
+  assert( 0 && "this should never occur" );
+  return nullptr;
 }
-#endif
+
+const Stmt* get_succesessor( const CompoundStmt* c, const Stmt* stmt ){
+  cout << __PRETTY_FUNCTION__ << endl;
+  for( auto I = c->body_begin(), E = c->body_end(); I != E ; I++ ){
+    // search yourself
+    if ( *I == stmt ){
+      std::cout << "found myself" << std::endl;
+      // get the successor
+      decltype(I) next = I + 1;
+      // if the statement is the first in the list
+      if ( next == c->body_end() ) return nullptr;
+      // otherwise
+      return *next;
+    }
+  }
+  assert( 0 && "this should never occur" );
+  return nullptr;
+}
+
+// TODO this currently just works for compound_statements 
+template <typename T>
+inline std::string getStringWithComments(const T *node, const T* parent, const SourceManager &SM) {
+  cout << __PRETTY_FUNCTION__ << endl;
+
+  SourceLocation expr_start = node->getLocStart();
+  SourceLocation expr_end = node->getLocEnd();
+  std::string comment = "";
+  int skip_start = 0;
+  int skip_end = 0;
+
+  // compound stmt 
+  if ( auto compound_stmt = dyn_cast_or_null<CompoundStmt>( parent ) ) {
+    if ( auto pre = get_predecessor( compound_stmt, node ) ) {
+      expr_start = pre->getLocEnd();
+      // now go down by one line 
+      auto FID = SM.getFileID( expr_start );
+      auto line = SM.getSpellingLineNumber( expr_start ); // i have no idea why i dont have to add 1 to the line but it works
+      auto column = 0; // start to read from line begin
+      expr_start = SM.translateLineCol( FID, line, column );
+    }else{
+      // no predecessor 
+      expr_start = compound_stmt->getLBracLoc();
+      skip_start = 1;
+    }
+
+
+    if ( auto suc = get_succesessor( compound_stmt, node ) ) {
+      // find where the successor is 
+      auto comment_start = node->getLocEnd();
+      auto comment_end = suc->getLocStart();
+      std::string ret = Lexer::getSourceText(
+	  CharSourceRange::getTokenRange(SourceRange(comment_start, comment_end)), SM,
+	  LangOptions());
+
+
+      // get the string but throw away everything after the first \n character
+      std::cout << "text till next statemenet: " << ret.substr( 1 ) << std::endl;
+      comment = ret.substr( 1, ret.find("\n") );
+    }else{
+      expr_end = compound_stmt->getRBracLoc();
+      skip_end = 1;
+    }
+  }
+
+  std::string ret = Lexer::getSourceText(
+      CharSourceRange::getTokenRange(SourceRange(expr_start, expr_end)), SM,
+      LangOptions());
+
+  string corrected = ret.substr( skip_start, ret.size()-skip_end ) + comment;
+
+  cout << "lexed text: \t" << ret << comment << endl;;
+
+  std::cout << "corrected: \t" << corrected <<std::endl;
+
+  return corrected;
+}
 
 SourceManager* global_SM = nullptr;
 
@@ -859,6 +944,14 @@ string getString( const T* node ){
   SourceManager& SM = *global_SM;
   return getString( node, SM ); 
 }
+
+template <typename T>
+string getStringWithComments( const T* node, const T* parent ){
+  SourceManager& SM = *global_SM;
+  return getStringWithComments( node, parent, SM ); 
+}
+
+
 
 #if 0
 void handleSCoP(  const MatchFinder::MatchResult &Result ){
@@ -1891,14 +1984,14 @@ auto handleIfStatement( const Stmt* stmt ){
   }
 }
 
-osl_statement_p handleStatement( const Stmt* stmt );
+osl_statement_p handleStatement( const Stmt* stmt, const Stmt* parent );
 
-auto handleSelectionElseStatement( const Stmt* stmt ){
+auto handleSelectionElseStatement( const Stmt* stmt, const Stmt* parent ){
   if (!parser_valid_else[parser_if_depth]) {
     yyerror("unsupported negation of a condition involving a modulo");
     YYABORT;
   }
-  auto statement = handleStatement( stmt );
+  auto statement = handleStatement( stmt, parent );
   if ( statement ) {
       CLAN_debug("rule selection_else_statement.1: else <stmt>");
       auto ret = statement;
@@ -1922,7 +2015,7 @@ auto handleSelectionStatement( const Stmt* stmt ){
       if ((parser_loop_depth + parser_if_depth) > CLAN_MAX_DEPTH)
 	CLAN_error("CLAN_MAX_DEPTH reached, recompile with a higher value");
 
-      if( auto statement = handleStatement( if_stmt->getThen() ) ){
+      if( auto statement = handleStatement( if_stmt->getThen(), if_stmt ) ){
 	osl_relation_p not_if;
 	
 	CLAN_debug("rule selection_statement.1.2: if ( condition ) <stmt> ...");
@@ -1938,7 +2031,7 @@ auto handleSelectionStatement( const Stmt* stmt ){
 	}
 	osl_relation_free(affine_condition);
 
-	if ( auto selection_else_statement = handleSelectionElseStatement( if_stmt->getElse() ) ) {
+	if ( auto selection_else_statement = handleSelectionElseStatement( if_stmt->getElse(), if_stmt ) ) {
 	  CLAN_debug("rule selection_statement.1.3: if ( condition ) <stmt>"
 		     "[else <stmt>]");
 	  clan_domain_drop(&parser_stack);
@@ -1955,7 +2048,7 @@ auto handleSelectionStatement( const Stmt* stmt ){
   return (osl_statement_p)nullptr;
 }
 
-osl_statement_p handleLoopBody( const Stmt* stmt );
+osl_statement_p handleLoopBody( const Stmt* stmt, const Stmt* parent );
 
 auto handleFOR( const Stmt* stmt ){
   if ( auto for_stmt = dyn_cast_or_null<ForStmt>( stmt ) ){
@@ -2007,7 +2100,7 @@ auto handleIterationStatement( const Stmt* stmt ){
 	  parser_scattering[2*parser_loop_depth] = 0;
 	  free(loop_stride_list);
 	
-	  auto loop_body = handleLoopBody( FOR->getBody() );
+	  auto loop_body = handleLoopBody( FOR->getBody(), FOR );
 	  if (loop_body ){
 	    CLAN_debug("rule iteration_statement.2.2: for ( init cond stride ) body");
 	    ret = loop_body;
@@ -2022,18 +2115,18 @@ auto handleIterationStatement( const Stmt* stmt ){
 }
 
 
-auto handleStatementList ( const Stmt* const* begin, const Stmt* const* end ){
+auto handleStatementList ( const Stmt* const* begin, const Stmt* const* end, const Stmt* parent ){
   logg << __PRETTY_FUNCTION__ << endl;
 
   // case 1: just one statement;
   if ( std::distance( begin, end ) == 1 ){
-    auto ret = handleStatement( *begin );
+    auto ret = handleStatement( *begin, parent );
     return ret;
   }
 
   // case 2: multiple statements
-  auto statement_list = handleStatementList( begin, end - 1 );
-  auto statement = handleStatement( *(end - 1) );
+  auto statement_list = handleStatementList( begin, end - 1, parent );
+  auto statement = handleStatement( *(end - 1), parent );
   osl_statement_add(&statement_list, statement);
   return statement_list;
 }
@@ -2042,7 +2135,7 @@ auto handleCompoundStatement( const Stmt* stmt ){
   logg << __PRETTY_FUNCTION__ << endl;
   if ( auto compound_stmt = dyn_cast_or_null<CompoundStmt>( stmt ) ) {
     if ( compound_stmt->size() > 0 ) {
-      auto ret = handleStatementList( compound_stmt->body_begin(), compound_stmt->body_end() );
+      auto ret = handleStatementList( compound_stmt->body_begin(), compound_stmt->body_end(), compound_stmt );
       return ret; 
     }
   }
@@ -2661,7 +2754,7 @@ match_wrapper_p handleExpression( const Expr* expr ){
   return match_fail();
 }
 
-osl_statement_p handleExpressionStatement( const Stmt* stmt ){
+osl_statement_p handleExpressionStatement( const Stmt* stmt, const Stmt* parent ){
   logg << __PRETTY_FUNCTION__ << endl;
   osl_statement_p ret = nullptr;
 
@@ -2670,6 +2763,7 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt ){
     parser_access_extbody = osl_extbody_malloc();
   }
 
+  auto statement_str_with_comments = getStringWithComments( stmt, parent );
   // This is where the statements string is recorded into the openscop structure
   // TODO in addition to the osl statement store the pointer to the ast node 
   auto statement_str = getString( stmt );
@@ -2742,7 +2836,7 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt ){
 }
 
 // TODO continue there is a lot more about statements
-osl_statement_p handleStatement( const Stmt* stmt ){
+osl_statement_p handleStatement( const Stmt* stmt, const Stmt* parent ){
   logg << __PRETTY_FUNCTION__ << endl;
 
 #if 0
@@ -2767,7 +2861,7 @@ osl_statement_p handleStatement( const Stmt* stmt ){
     return iteration_statement;
   }
 
-  auto expression_statement = handleExpressionStatement( stmt );
+  auto expression_statement = handleExpressionStatement( stmt, parent );
   if ( expression_statement ) {
     return expression_statement;
   }
@@ -2778,10 +2872,10 @@ osl_statement_p handleStatement( const Stmt* stmt ){
   return (osl_statement_p)nullptr;
 }
 
-osl_statement_p handleLoopBody( const Stmt* stmt ){
+osl_statement_p handleLoopBody( const Stmt* stmt, const Stmt* parent ){
   logg << __PRETTY_FUNCTION__ << endl;
   osl_statement_p ret = nullptr;
-  auto statement = handleStatement( stmt );
+  auto statement = handleStatement( stmt, parent );
   if ( statement ) {
     CLAN_debug("rule loop_body.1: <stmt>");
     clan_parser_decrement_loop_depth();
