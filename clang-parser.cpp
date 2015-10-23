@@ -129,6 +129,22 @@ std::ofstream logg;
   exit(-1);\
   }while(0)
 
+using namespace std;
+using namespace clang;
+
+
+std::vector<std::pair<SourceRange, std::string>>* global_messages;
+std::vector<std::string>* global_statement_texts;
+
+template <typename T>
+void emit_message( const T * node, std::string message ){
+  global_messages->push_back( make_pair ( SourceRange( node->getLocStart(), node->getLocEnd() ), std::string("CLAN_CLANG: ") + message ) );
+}
+
+template <typename T>
+void emit_debug_message( const T * node, std::string message ){
+  emit_message( node, std::string(" DEBUG: ") + message );
+}
 
 extern "C"{
    int  yylex(void);
@@ -144,7 +160,7 @@ extern "C"{
    void clan_parser_increment_loop_depth();
    void clan_parser_decrement_loop_depth();
    //void clan_parser_state_print(FILE*);
-   int  clan_parser_is_loop_sane(osl_relation_list_p,osl_relation_list_p,int*);
+   int  clan_parser_is_loop_sane(osl_relation_list_p,osl_relation_list_p,int*, const Stmt* );
    void clan_parser_state_initialize(clan_options_p);
    osl_scop_p clan_parse(FILE*, clan_options_p);
 
@@ -200,7 +216,6 @@ extern "C"{
    int            parser_access_start;   /**< Start coordinates */
    int            parser_access_length;  /**< Length of the access string*/
 
-   using namespace std;
 
 /* Value type.  */
 #if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
@@ -228,7 +243,9 @@ void yyerror(char *s) {
   char c = 'C';
   FILE* file;
  
-  CLAN_debug("parse error notified");
+  CLAN_debug("parse error notified (yyerror)");
+
+  //emit_message( nullptr, s );
 
   if (!parser_options->autoscop) {
     fprintf(stderr, "[Clan] Error: %s at line %d, column %d.\n", s,
@@ -485,13 +502,13 @@ void clan_parser_decrement_loop_depth(){
 
 
 int clan_parser_is_loop_sane(osl_relation_list_p initialization,
-                             osl_relation_list_p condition, int* stride) {
+                             osl_relation_list_p condition, int* stride, const Stmt* stmt) {
   int i, step;
 
   // Check there is the same number of elements in all for parts.
   if ((clan_relation_list_nb_elements(initialization) != parser_xfor_index) ||
       (clan_relation_list_nb_elements(condition) != parser_xfor_index)) {
-    yyerror("not the same number of elements in all loop parts");
+    emit_message(stmt, "not the same number of elements in all loop parts");
     return 0;
   }
 
@@ -507,11 +524,11 @@ int clan_parser_is_loop_sane(osl_relation_list_p initialization,
       osl_relation_list_free(condition);
       free(stride);
       if (step == 0)
-	yyerror("unsupported zero loop stride");
+	emit_message( stmt, "unsupported zero loop stride");
       else if (step > 0)
-	yyerror("illegal min or floord in forward loop initialization");
+	emit_message( stmt, "illegal min or floord in forward loop initialization");
       else
-	yyerror("illegal max or ceild in backward loop initialization");
+	emit_message( stmt, "illegal max or ceild in backward loop initialization");
       return 0;
     }
     parser_ceild[i]  = 0;
@@ -813,7 +830,6 @@ auto print_stack_trace(){
 }
 #endif
 
-using namespace clang;
 
 #if 0
 const char* SCOP_ID = "scop";
@@ -1015,18 +1031,6 @@ void handleSCoP(  const MatchFinder::MatchResult &Result ){
 }
 #endif
 
-std::vector<std::pair<SourceRange, std::string>>* global_messages;
-std::vector<std::string>* global_statement_texts;
-
-template <typename T>
-void emit_message( const T * node, std::string message ){
-  global_messages->push_back( make_pair ( SourceRange( node->getLocStart(), node->getLocEnd() ), std::string("CLAN_CLANG: ") + message ) );
-}
-
-template <typename T>
-void emit_debug_message( const T * node, std::string message ){
-  emit_message( node, std::string(" DEBUG: ") + message );
-}
 
 auto to_char_str( string str ) {
   char* ret;
@@ -1057,6 +1061,33 @@ auto handleInteger( const Expr* expr ){
   return ret;
 }
 
+
+// a statement is save to use if all variables which are pointers or references have a restrict qualifier
+// TODO is this really needed for high level parallelization ?
+auto restrict_qualified( const Stmt* stmt ) {
+  
+  // TODO find all declrefs 
+  // TODO get their types 
+  // TODO get their qualtypes
+  // TODO are they restric qualified ?
+  //
+
+}
+
+// TODO check that:
+// a function is save to call if it has the pure or const attribute 
+auto is_save_to_call( const Decl* decl ) {
+  if ( auto function_decl = dyn_cast_or_null<FunctionDecl>( decl ) ){
+    for( auto i = function_decl->attr_begin(), e = function_decl->attr_end(); i != e; ++i ){
+      if ( isa<ConstAttr>(*i) ) return true;
+      if ( isa<PureAttr>(*i) ) return true;
+    }
+    return false;
+  }
+  assert( 0 && "not implemented" );
+  return false;
+}
+
 // has to work with standard char pointers
 auto handleID( const Expr* expr ){
   logg << __PRETTY_FUNCTION__ << endl;
@@ -1073,9 +1104,11 @@ auto handleID( const Expr* expr ){
     return ret; 
   }
   if ( auto call_expr = dyn_cast_or_null<CallExpr>( iic_expr ) ) {
-    logg << "leaving via call expr " << __PRETTY_FUNCTION__ << endl;
-    emit_message( call_expr , "Assuming function call has no side effects" );
+    if ( !is_save_to_call ( call_expr->getCalleeDecl() ) ) {
+      emit_message( call_expr , "Assuming function call has no side effects" );
+    }
     ret = to_char_str( getString( call_expr ) );
+    logg << "leaving via call expr " << __PRETTY_FUNCTION__ << endl;
     return ret; 
   }
   logg << "leaving with nullptr" << __PRETTY_FUNCTION__ << endl;
@@ -1119,11 +1152,12 @@ auto handleAffinePrimaryExpression( const Expr* expr ) {
 	(id->type != CLAN_TYPE_PARAMETER)) {
       std::cout << "not an iterator or a parameter" << std::endl;
       free(id);
-      if (id->type == CLAN_TYPE_ARRAY)
-	yyerror("variable or array reference in an affine expression");
-      else
-	yyerror("function call in an affine expression");
-      YYABORT;
+      if (id->type == CLAN_TYPE_ARRAY){
+	emit_message( expr, "variable or array reference in an affine expression");
+      }else{
+	emit_message( expr, "function call in an affine expression");
+      }
+      return ret;
     }
     
     auto ret = clan_vector_term(parser_symbol, 1, ID, parser_options->precision);
@@ -1232,8 +1266,8 @@ auto handleAffineMultiplicativeExpression( const Expr* expr ) {
       if (!osl_vector_is_scalar( affine_multiplicative_expression ) && !osl_vector_is_scalar(affine_unary_expression)) {
         osl_vector_free(affine_multiplicative_expression);
         osl_vector_free(affine_unary_expression);
-        yyerror("non-affine expression");
-	YYABORT;
+        emit_message( expr ,"non-affine expression");
+	return (osl_vector_p)nullptr;
       }
 
       osl_vector_p ret = nullptr;
@@ -1257,8 +1291,8 @@ auto handleAffineMultiplicativeExpression( const Expr* expr ) {
       if (!osl_vector_is_scalar(affine_multiplicative_expression) || !osl_vector_is_scalar(affine_unary_expression)) {
         osl_vector_free(affine_multiplicative_expression);
         osl_vector_free(affine_unary_expression);
-        yyerror("non-affine expression");
-	YYABORT;
+        emit_message(expr, "non-affine expression");
+	return (osl_vector_p)nullptr;
       }
       val1 = osl_int_get_si(affine_multiplicative_expression->precision, affine_multiplicative_expression->v[affine_multiplicative_expression->size - 1]);
       val2 = osl_int_get_si(affine_unary_expression->precision, affine_unary_expression->v[affine_unary_expression->size - 1]);
@@ -1442,12 +1476,9 @@ osl_relation_p handleLoopInitialization( const Stmt* stmt ){
       auto ID = handleID( loop_declaration_1 );
 
       if ( ID ){
-	logg << "added new symbol " << ID << endl;
-	logg << "parser_symbol " << parser_symbol << endl;
-	logg << "parser_iterators " << parser_iterators << endl;
-	logg << "parser_loop_depth " << parser_loop_depth << endl;
 	if (!clan_symbol_new_iterator(&parser_symbol, parser_iterators, ID, parser_loop_depth)){
-	    YYABORT;
+	    emit_message( stmt, "a loop iterator was previously used for something else");
+	    return nullptr; 
 	}
       }
 
@@ -1474,7 +1505,8 @@ osl_relation_p handleLoopInitialization( const Stmt* stmt ){
 	if ( ID ) {
 	  logg << "added new symbol " << ID << endl;
 	  if (!clan_symbol_new_iterator(&parser_symbol, parser_iterators, ID, parser_loop_depth)){
-	      YYABORT;
+	    emit_message( expr, "a loop iterator was previously used for something else");
+	    return nullptr;
 	  }
 	}
 	logg << "rhs of the assign operator " << endl;
@@ -1801,8 +1833,8 @@ auto handleAffineRelation( const Expr* expr ){
       CLAN_debug("rule affine_relation.7: ! ( condition )");
       if (clan_relation_existential(affine_condition)) {
         osl_relation_free(affine_condition);
-	yyerror("unsupported negation of a condition involving a modulo");
-	YYABORT;
+	emit_message(unary_operator, "unsupported negation of a condition involving a modulo");
+	return (osl_relation_p)nullptr;
       }
       auto ret = clan_relation_not(affine_condition);
       osl_relation_free(affine_condition);
@@ -1990,8 +2022,8 @@ osl_statement_p handleStatement( const Stmt* stmt, const Stmt* parent );
 
 auto handleSelectionElseStatement( const Stmt* stmt, const Stmt* parent ){
   if (!parser_valid_else[parser_if_depth]) {
-    yyerror("unsupported negation of a condition involving a modulo");
-    YYABORT;
+    emit_message( stmt, "unsupported negation of a condition involving a modulo");
+    return (osl_statement_p)nullptr;
   }
   auto statement = handleStatement( stmt, parent );
   if ( statement ) {
@@ -2077,16 +2109,17 @@ auto handleIterationStatement( const Stmt* stmt ){
 	 
 	  // Check there is only one element in each list
 	  if (parser_xfor_index != 1) {
-	    yyerror("unsupported element list in a for loop");
+	    emit_message( stmt, "unsupported element list in a for loop");
 	    osl_relation_list_free(loop_initialization_list);
 	    osl_relation_list_free(loop_condition_list);
 	    free(loop_stride_list);
-	    YYABORT;
+	    return ret;
 	  }
 
 	  // Check loop bounds and stride consistency and reset sanity sentinels.
-	  if (!clan_parser_is_loop_sane(loop_initialization_list, loop_condition_list, loop_stride_list))
-	    YYABORT;
+	  if (!clan_parser_is_loop_sane(loop_initialization_list, loop_condition_list, loop_stride_list, stmt)){
+	    return ret;
+	  }
 
 	  // Add the constraints contributed by the for loop to the domain stack.
 	  clan_domain_dup(&parser_stack);
@@ -2260,7 +2293,8 @@ auto handlePostfixExpression( const Expr* expr ){
 
       CLAN_debug("rule postfix_expression.2: postfix_expression [ <affex> ]");
       if (!clan_symbol_update_type(parser_symbol, postfix_expression->result, CLAN_TYPE_ARRAY)){
-        YYABORT;
+	emit_message( subscript_expression ,"illegal use of an iterator (update or reference) in a statement");
+        return match_fail();
       }
       clan_relation_new_output_vector(postfix_expression->result->elt, affine_expression);
       osl_vector_free(affine_expression);
@@ -2275,7 +2309,7 @@ auto handlePostfixExpression( const Expr* expr ){
   auto function_call = dyn_cast_or_null<CallExpr>( expr );
   if ( function_call ){
 
-    emit_message( function_call, "Assuming this function has no side effects" );
+    //emit_message( function_call, "Assuming this function has no side effects" );
     auto postfix_expression = handlePostfixExpression( expr );
 
     if ( postfix_expression ){
@@ -2285,8 +2319,10 @@ auto handlePostfixExpression( const Expr* expr ){
 	parser_access_start = -1;
       }
 
-      if (!clan_symbol_update_type(parser_symbol, postfix_expression->result, CLAN_TYPE_FUNCTION))
-	YYABORT;
+      if (!clan_symbol_update_type(parser_symbol, postfix_expression->result, CLAN_TYPE_FUNCTION)){
+	emit_message( function_call ,"illegal use of an iterator (update or reference) in a statement");
+        return match_fail();
+      }
       osl_relation_list_free(postfix_expression->result);
 
       auto argument_expression_list = handleArgumentExpressionList( function_call->getArgs(), function_call->getNumArgs() );
@@ -2335,8 +2371,11 @@ auto handlePostfixExpression( const Expr* expr ){
 
       CLAN_debug("rule postfix_expression.6: postfix_expression -> "
 	         "postfix_expression ++/--");
-      if (!clan_symbol_update_type(parser_symbol, postfix_expression->result, CLAN_TYPE_ARRAY))
-        YYABORT;
+      if (!clan_symbol_update_type(parser_symbol, postfix_expression->result, CLAN_TYPE_ARRAY)){
+	emit_message(unary_operator ,"illegal use of an iterator (update or reference) in a statement");
+        return match_fail();
+      }
+
       list = postfix_expression->result;
       // The last reference in the list is also written.
       if (list != NULL) {
@@ -2374,8 +2413,10 @@ auto handleUnaryExpression( const Expr* expr ){
 
       CLAN_debug("rule unary_expression.2: unary_expression -> "
 	         "++/-- unary_expression");
-      if (!clan_symbol_update_type(parser_symbol, unary_expression->result, CLAN_TYPE_ARRAY))
-        YYABORT;
+      if (!clan_symbol_update_type(parser_symbol, unary_expression->result, CLAN_TYPE_ARRAY)){
+	emit_message( unary_operator, "illegal use of an iterator (update or reference) in a statement");
+	return match_fail();
+      }
       auto list = unary_expression->result;
       // The last reference in the list is also written.
       if (list != NULL) {
@@ -2720,8 +2761,10 @@ match_wrapper_p handleAssignmentExpression( const Expr* expr ){
 
       CLAN_debug("rule assignment_expression.2: unary_expression "
 	         "assignment_operator assignment_expression;");
-      if (!clan_symbol_update_type(parser_symbol, unary_expression->result, CLAN_TYPE_ARRAY))
-        YYABORT;
+      if (!clan_symbol_update_type(parser_symbol, unary_expression->result, CLAN_TYPE_ARRAY)){
+	emit_message( expr, "illegal use of an iterator (update or reference) in a statement");
+        return match_fail();
+      }
       auto ret = unary_expression;
       // Accesses of $1 are READ except the last one which is a WRITE or both.
       clan_relation_list_define_type(ret->result, OSL_TYPE_READ);
@@ -2787,8 +2830,8 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt, const Stmt* parent 
 
       // - 1. Domain
       if (clan_relation_list_nb_elements(parser_stack->constraints) != 1) {
-	yyerror("missing label on a statement inside an xfor loop");
-	YYABORT;
+	emit_message( stmt, "missing label on a statement inside an xfor loop");
+	return ret;
       }
       statement->domain = osl_relation_clone(parser_stack->constraints->elt);
       osl_relation_set_type(statement->domain, OSL_TYPE_DOMAIN);
