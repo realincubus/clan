@@ -101,6 +101,7 @@ extern "C"{
 #include <osl/scop.h>
 #include <clang/AST/AST.h>
 #include <clang/Lex/Lexer.h>
+#include "clang/AST/RecursiveASTVisitor.h"
 
 #define BACKWARD_HAS_DW 1
 //#define BACKWARD_HAS_BFD 1
@@ -877,6 +878,11 @@ const Stmt* get_predecessor( const CompoundStmt* c, const Stmt* stmt ){
   return nullptr;
 }
 
+
+auto ignoreImplicitCastExpressions( const Expr* expr ){
+  return expr->IgnoreParenImpCasts();
+}
+
 const Stmt* get_succesessor( const CompoundStmt* c, const Stmt* stmt ){
   cout << __PRETTY_FUNCTION__ << endl;
   for( auto I = c->body_begin(), E = c->body_end(); I != E ; I++ ){
@@ -895,9 +901,38 @@ const Stmt* get_succesessor( const CompoundStmt* c, const Stmt* stmt ){
   return nullptr;
 }
 
+class DeclRefVisitor
+  : public clang::RecursiveASTVisitor<DeclRefVisitor> {
+public:
+
+  DeclRefVisitor( std::vector<std::string>& _iterators ):
+    iterators(_iterators)
+  {
+
+  }
+
+  bool VisitDeclRefExpr( const DeclRefExpr* declRefExpr ) {
+    std::cout << "visited a node" << std::endl;
+    for( auto i = 0 ; i < iterators.size() ; i++ ){
+      auto& iterator = iterators[i];
+      if ( declRefExpr->getDecl()->getNameAsString() == iterator ) {
+	// push_this occurence to the list of excludes for this iterator
+	exclude_ranges.push_back( make_pair( declRefExpr->getSourceRange(), to_string(i)) );
+	return true;
+      }
+    }
+    
+    // everything that is not an iterator passes this point
+    return true;
+  }
+  std::vector<std::pair<SourceRange,std::string>> exclude_ranges;
+private:
+  std::vector<std::string>& iterators;
+};
+
 // TODO this currently just works for compound_statements 
 template <typename T>
-inline std::string getStringWithComments(const T *node, const T* parent, const SourceManager &SM) {
+inline std::string getStringWithComments(const T *node, const T* parent, const SourceManager &SM, std::vector<std::string>& iterators) {
   cout << __PRETTY_FUNCTION__ << endl;
 
   SourceLocation expr_start = node->getLocStart();
@@ -940,17 +975,70 @@ inline std::string getStringWithComments(const T *node, const T* parent, const S
     }
   }
 
+
+  {
+    DeclRefVisitor visitor(iterators);
+    visitor.TraverseStmt( (Stmt*)node );
+
+    std::string lexer_result;
+
+    auto starts_with = expr_start;
+
+    for ( auto& exclude : visitor.exclude_ranges){
+
+      std::string ret = Lexer::getSourceText(
+	CharSourceRange::getCharRange(
+	  SourceRange(
+	    Lexer::getLocForEndOfToken(starts_with,0,SM,LangOptions()), 
+	    exclude.first.getBegin()
+	  )
+	), 
+	SM,
+	LangOptions()
+      );
+
+      std::cout << "parsed: " << ret << std::endl;
+
+      lexer_result += ret;
+      lexer_result += "..."s + exclude.second + "..."s;
+      
+      starts_with = exclude.first.getEnd();
+    }
+
+    std::string ret = Lexer::getSourceText(
+      CharSourceRange::getTokenRange(
+	SourceRange(
+	  Lexer::getLocForEndOfToken(starts_with,0,SM,LangOptions()), 
+	  expr_end
+	)
+      ), 
+      SM,
+      LangOptions()
+    );
+
+    std::cout << "parsed: " << ret << std::endl;
+
+    lexer_result += ret;
+    lexer_result += comment; // the comment include the ";"
+
+    std::cout << "lexer_result: " << lexer_result << std::endl;
+
+    return lexer_result;
+  }
+#if 0
+
   std::string ret = Lexer::getSourceText(
       CharSourceRange::getTokenRange(SourceRange(expr_start, expr_end)), SM,
       LangOptions());
 
-  string corrected = ret.substr( skip_start, ret.size()-skip_end ) + comment;
+  string corrected = ret.substr( skip_start, ret.size()-1 - skip_end ) + comment;
 
   cout << "lexed text: \t" << ret << comment << endl;;
 
   std::cout << "corrected: \t" << corrected <<std::endl;
 
   return corrected;
+#endif
 }
 
 SourceManager* global_SM = nullptr;
@@ -962,9 +1050,9 @@ string getString( const T* node ){
 }
 
 template <typename T>
-string getStringWithComments( const T* node, const T* parent ){
+string getStringWithComments( const T* node, const T* parent, std::vector<std::string>& iterators ){
   SourceManager& SM = *global_SM;
-  return getStringWithComments( node, parent, SM ); 
+  return getStringWithComments( node, parent, SM, iterators ); 
 }
 
 
@@ -1950,9 +2038,9 @@ osl_relation_list_p handleLoopConditionList( const Expr* expr ){
 
 // TODO make it ignore parenthesis
 auto handleLoopStride( const Expr* expr ){
-  auto unary_operator = dyn_cast_or_null<UnaryOperator>( expr );
-  if ( unary_operator ){
+  std::cout << __PRETTY_FUNCTION__ << std::endl;
 
+  if ( auto unary_operator = dyn_cast_or_null<UnaryOperator>( expr ) ) {
     auto decl_ref = dyn_cast_or_null<DeclRefExpr>(unary_operator->getSubExpr());
     if ( decl_ref ) {
       string opcode = unary_operator->getOpcodeStr(unary_operator->getOpcode());
@@ -1967,32 +2055,51 @@ auto handleLoopStride( const Expr* expr ){
     }
   }
 
-  auto binary_operator = dyn_cast_or_null<BinaryOperator>( expr );
 
-  if ( binary_operator ) {
-    auto decl_ref = dyn_cast_or_null<DeclRefExpr>(unary_operator->getSubExpr());
+  if ( auto binary_operator = dyn_cast_or_null<BinaryOperator>( expr ) ) {
+    std::cout << "is a binary operator " << std::endl;
+    auto decl_ref = ignoreImplicitCastExpressions(dyn_cast_or_null<DeclRefExpr>(binary_operator->getLHS()));
     if ( decl_ref ) {
-      string opcode = unary_operator->getOpcodeStr(unary_operator->getOpcode());
+      string opcode = binary_operator->getOpcodeStr(binary_operator->getOpcode());
       if ( opcode == "=" ){
-	auto lhs = binary_operator->getLHS();
-	auto rhs = binary_operator->getRHS();
+	std::cout << "has opcode = " << std::endl;
+	auto lhs = ignoreImplicitCastExpressions(binary_operator->getLHS());
+	auto rhs = ignoreImplicitCastExpressions(binary_operator->getRHS());
 	if ( auto decl_ref_lhs = dyn_cast_or_null<DeclRefExpr>( lhs ) ){
 	  if ( auto binary_operator_rhs = dyn_cast_or_null<BinaryOperator>( rhs ) ){
 	    // TODO add check : decl_ref_lhs and decl_ref have to reference the same variable
 	    string opcode = binary_operator_rhs->getOpcodeStr(binary_operator_rhs->getOpcode());
-	    auto integer = handleInteger( binary_operator_rhs->getRHS() );
-	    if ( opcode == "+" ){
-	      parser_xfor_index++; 
-	      return *integer;
+	    if( auto integer = handleInteger( binary_operator_rhs->getRHS() ) ){
+	      if ( opcode == "+" ){
+		parser_xfor_index++; 
+		return *integer; // TODO i see a memory leak here !?!?!
+	      }
+	      if ( opcode == "-" ) {
+		parser_xfor_index++; 
+		return - *integer;
+	      }
 	    }
-	    if ( opcode == "-" ) {
-	      parser_xfor_index++; 
-	      return - *integer;
-	    }
-
 	  }
 	}
       }
+      if ( opcode == "+=" || opcode == "-=" ){
+	std::cout << "is a plus/minus equal operator" << std::endl;
+	auto lhs = ignoreImplicitCastExpressions(binary_operator->getLHS());
+	auto rhs = ignoreImplicitCastExpressions(binary_operator->getRHS());
+	if ( auto decl_ref_lhs = dyn_cast_or_null<DeclRefExpr>( lhs ) ){
+	  if( auto integer = handleInteger( rhs ) ){
+	    if ( opcode == "+=" ) {
+	      parser_xfor_index++;  // i have no idea why this is needed
+	      return *integer;
+	    } 
+	    if ( opcode == "-=" ) {
+	      parser_xfor_index++; 
+	      return -*integer;
+	    }
+	  }
+	}
+      }
+      // perhaps calls to advance for iterators are interesting
     }
   }
 
@@ -2002,6 +2109,7 @@ auto handleLoopStride( const Expr* expr ){
 
 // TODO handle multiple strides
 auto handleLoopStrideList(const Expr* expr){
+  std::cout << __PRETTY_FUNCTION__ << std::endl;
 
   auto loop_stride = handleLoopStride( expr );
   if ( loop_stride ) {
@@ -2009,6 +2117,7 @@ auto handleLoopStrideList(const Expr* expr){
     ret[0] = loop_stride;
     return ret;
   }
+  return (int*)nullptr;
 }
 
 auto handleIfStatement( const Stmt* stmt ){
@@ -2098,9 +2207,12 @@ auto handleIterationStatement( const Stmt* stmt ){
   auto FOR = handleFOR( stmt );
   if ( FOR ) {
     auto loop_initialization_list = handleLoopInitializationList( FOR->getInit() );
+    std::cout << "fished loop initialization list" << std::endl;
     if ( loop_initialization_list ) {
       auto loop_condition_list = handleLoopConditionList( FOR->getCond() );
+      std::cout << "finished loop condition list" << std::endl;
       if ( loop_condition_list ) {
+	cout << "calling loop stride list" << endl;
 	auto loop_stride_list = handleLoopStrideList( FOR->getInc() );
 	if ( loop_stride_list ) {
 	  CLAN_debug("rule iteration_statement.2.1: for ( init cond stride ) ...");
@@ -2272,9 +2384,6 @@ auto handleArgumentExpressionList( const Expr* const* expressions, int n_express
   }
 }
 
-auto ignoreImplicitCastExpressions( const Expr* expr ){
-  return expr->IgnoreImpCasts();
-}
 
 auto handlePostfixExpression( const Expr* expr ){
   auto primary_expression = handlePrimaryExpression( expr );
@@ -2339,8 +2448,9 @@ auto handlePostfixExpression( const Expr* expr ){
   if ( member_access ){
 
     auto postfix_expression = handlePostfixExpression( member_access->getBase() );
+    emit_message( member_access, "member access is currently not implemented" );
+    return match_fail();
     // TODO needs custom implementation of ID handling
-    assert( 0 && "not implemented" );
 #if 0
     auto ID = handleID( member_access );
 
@@ -2808,8 +2918,6 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt, const Stmt* parent 
     parser_access_extbody = osl_extbody_malloc();
   }
 
-  auto statement_str_with_comments = getStringWithComments( stmt, parent );
-  global_statement_texts->push_back( statement_str_with_comments );
   // This is where the statements string is recorded into the openscop structure
   // TODO in addition to the osl statement store the pointer to the ast node 
   auto statement_str = getString( stmt );
@@ -2866,7 +2974,22 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt, const Stmt* parent 
 	parser_access_extbody->body = osl_body_clone(body);
 	gen = osl_generic_shell(parser_access_extbody, osl_extbody_interface());
 	osl_generic_add(&statement->extension, gen);
+
       }
+
+      std::vector<std::string> iterators;
+      int idx = 0;
+      // TODO generate a vector of strings
+      while( body->iterators->string[idx] ){
+	cout << body->iterators->string[idx] << endl;
+	iterators.push_back(body->iterators->string[idx]);
+	idx++;
+      }
+
+#if 1
+      auto statement_str_with_comments = getStringWithComments( stmt, parent, iterators );
+      global_statement_texts->push_back( statement_str_with_comments );
+#endif
 
       parser_recording = CLAN_FALSE;
       parser_record = NULL;
