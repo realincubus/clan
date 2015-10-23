@@ -1016,6 +1016,7 @@ void handleSCoP(  const MatchFinder::MatchResult &Result ){
 #endif
 
 std::vector<std::pair<SourceRange, std::string>>* global_messages;
+std::vector<std::string>* global_statement_texts;
 
 template <typename T>
 void emit_message( const T * node, std::string message ){
@@ -1073,6 +1074,7 @@ auto handleID( const Expr* expr ){
   }
   if ( auto call_expr = dyn_cast_or_null<CallExpr>( iic_expr ) ) {
     logg << "leaving via call expr " << __PRETTY_FUNCTION__ << endl;
+    emit_message( call_expr , "Assuming function call has no side effects" );
     ret = to_char_str( getString( call_expr ) );
     return ret; 
   }
@@ -2273,6 +2275,7 @@ auto handlePostfixExpression( const Expr* expr ){
   auto function_call = dyn_cast_or_null<CallExpr>( expr );
   if ( function_call ){
 
+    emit_message( function_call, "Assuming this function has no side effects" );
     auto postfix_expression = handlePostfixExpression( expr );
 
     if ( postfix_expression ){
@@ -2291,8 +2294,7 @@ auto handlePostfixExpression( const Expr* expr ){
 	return argument_expression_list;
       }
 
-      auto ret = match_fail();
-      return ret;
+      return match_fail();
     }
   }
 
@@ -2764,6 +2766,7 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt, const Stmt* parent 
   }
 
   auto statement_str_with_comments = getStringWithComments( stmt, parent );
+  global_statement_texts->push_back( statement_str_with_comments );
   // This is where the statements string is recorded into the openscop structure
   // TODO in addition to the osl statement store the pointer to the ast node 
   auto statement_str = getString( stmt );
@@ -2893,7 +2896,7 @@ osl_statement_p handleLoopBody( const Stmt* stmt, const Stmt* parent ){
   return ret;
 }
 
-osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, string filename, std::vector<std::pair<SourceRange,std::string>>& messages ){
+osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, string filename, std::vector<std::pair<SourceRange,std::string>>& messages, vector<std::string>& statement_texts ){
 
   static bool once = true;
   if ( once ) {
@@ -2906,6 +2909,7 @@ osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, stri
     once = false;
   }
 
+  global_statement_texts = &statement_texts;
   global_SM = (SourceManager*)&SM;
   global_messages = &messages;
   clan_options_p options;
