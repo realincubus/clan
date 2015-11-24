@@ -179,7 +179,7 @@ include_directories ( osl/include/ )
 
 	# Find the libraries that correspond to the LLVM components
 	# that we wish to use
-	llvm_map_components_to_libnames(llvm_libs support core irreader)
+	#llvm_map_components_to_libnames(llvm_libs support core irreader)
 
 	add_libraries( clan-clang "${sources}" "clang-parser.cpp" ${FLEX_clan_scanner_OUTPUTS} )
 
