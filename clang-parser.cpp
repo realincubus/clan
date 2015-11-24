@@ -136,6 +136,7 @@ using namespace clang;
 
 std::vector<std::pair<SourceRange, std::string>>* global_messages;
 std::vector<std::string>* global_statement_texts;
+std::map<osl_statement_p, const Stmt*>* global_osl_to_clang;
 
 template <typename T>
 void emit_message( const T * node, std::string message ){
@@ -947,7 +948,7 @@ inline std::string getStringWithComments(const T *node, const T* parent, const S
       expr_start = pre->getLocEnd();
       // now go down by one line 
       auto FID = SM.getFileID( expr_start );
-      auto line = SM.getSpellingLineNumber( expr_start ); // i have no idea why i dont have to add 1 to the line but it works
+      auto line = SM.getSpellingLineNumber( expr_start ); // TODO something is wrong here. does not seam to be critical but still wrong
       auto column = 0; // start to read from line begin
       expr_start = SM.translateLineCol( FID, line, column );
     }else{
@@ -970,6 +971,8 @@ inline std::string getStringWithComments(const T *node, const T* parent, const S
       std::cout << "text till next statemenet: " << ret.substr( 1 ) << std::endl;
       comment = ret.substr( 1, ret.find("\n") );
     }else{
+      // if there is no successor because its the last statement 
+      // read until the end but skip the 
       expr_end = compound_stmt->getRBracLoc();
       skip_end = 1;
     }
@@ -1019,26 +1022,17 @@ inline std::string getStringWithComments(const T *node, const T* parent, const S
     std::cout << "parsed: " << ret << std::endl;
 
     lexer_result += ret;
+    // to skip the closing bracket if its present
+    if ( skip_end ) {
+      lexer_result = lexer_result.substr( 0, lexer_result.size()-1);
+    }
     lexer_result += comment; // the comment include the ";"
 
     std::cout << "lexer_result: " << lexer_result << std::endl;
 
     return lexer_result;
   }
-#if 0
 
-  std::string ret = Lexer::getSourceText(
-      CharSourceRange::getTokenRange(SourceRange(expr_start, expr_end)), SM,
-      LangOptions());
-
-  string corrected = ret.substr( skip_start, ret.size()-1 - skip_end ) + comment;
-
-  cout << "lexed text: \t" << ret << comment << endl;;
-
-  std::cout << "corrected: \t" << corrected <<std::endl;
-
-  return corrected;
-#endif
 }
 
 SourceManager* global_SM = nullptr;
@@ -2989,6 +2983,12 @@ osl_statement_p handleExpressionStatement( const Stmt* stmt, const Stmt* parent 
 #if 1
       auto statement_str_with_comments = getStringWithComments( stmt, parent, iterators );
       global_statement_texts->push_back( statement_str_with_comments );
+
+#endif
+
+#if 1
+      (*global_osl_to_clang)[statement] = stmt;
+      std::cout << "mapping " << statement << " to " << stmt << std::endl;
 #endif
 
       parser_recording = CLAN_FALSE;
@@ -3062,7 +3062,7 @@ osl_statement_p handleLoopBody( const Stmt* stmt, const Stmt* parent ){
   return ret;
 }
 
-osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, string filename, std::vector<std::pair<SourceRange,std::string>>& messages, vector<std::string>& statement_texts ){
+osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, string filename, std::vector<std::pair<SourceRange,std::string>>& messages, vector<std::string>& statement_texts, std::map<osl_statement_p,const Stmt*>& osl_to_clang ){
 
   static bool once = true;
   if ( once ) {
@@ -3078,6 +3078,8 @@ osl_scop_p handleForLoop( const ForStmt* for_loop, const SourceManager& SM, stri
   global_statement_texts = &statement_texts;
   global_SM = (SourceManager*)&SM;
   global_messages = &messages;
+  global_osl_to_clang = &osl_to_clang;
+
   clan_options_p options;
   int argc = 2;
   char* argv[argc] = { "clan", "non_exist.c" };

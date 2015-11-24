@@ -1,12 +1,14 @@
 cmake_minimum_required(VERSION 2.8)
 
-
-set(PACKAGE_VERSION "0.7.1")
+#set(PACKAGE_VERSION "0.7.1")
 set(top_srcdir "${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
-set(OSL_LIBRARY osl)
+
+add_subdirectory( osl )
+
+include_directories ( osl/include/ )
 
 # User's settings - C Flags
 
@@ -79,7 +81,7 @@ set(OSL_LIBRARY osl)
 
 
 # osl
-	find_package(osl REQUIRED)
+#find_package(osl REQUIRED)
 
 # Flex
 	find_package(BISON REQUIRED)
@@ -144,7 +146,7 @@ set(OSL_LIBRARY osl)
 
 	#add_backward( ${libname}_static )
 	  set_target_properties(${libname}_static PROPERTIES OUTPUT_NAME ${libname})
-	  target_link_libraries(${libname}_static ${OSL_LIBRARY})
+	  target_link_libraries(${libname}_static osl )
 	  get_property(clan_static_lib_location TARGET ${libname}_static PROPERTY LOCATION)
 	  message(STATUS "Add ${libname} library (static) ${clan_static_lib_location}")
 	endfunction( add_libraries )
@@ -190,7 +192,7 @@ set(OSL_LIBRARY osl)
 	message(STATUS "Add executable clan")
 	add_executable(clan_exe "source/clan.c" ${backward_ENABLE} )
 	set_target_properties(clan_exe PROPERTIES OUTPUT_NAME "clan")
-	target_link_libraries(clan_exe clan_static ${OSL_LIBRARY})
+	target_link_libraries(clan_exe clan_static osl)
 
 	#add_executable(clan-clang_exe "source/clan-clang.c" ${backward_ENABLE} )
 	#set_target_properties(clan-clang_exe PROPERTIES OUTPUT_NAME "clan-clang")
