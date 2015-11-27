@@ -9,6 +9,7 @@ SET(CMAKE_EXPORT_COMPILE_COMMANDS on)
 add_subdirectory( osl )
 
 include_directories ( osl/include/ )
+include_directories ( ${CMAKE_BINARY_DIR}/tolls/clang/include )
 
 # User's settings - C Flags
 
